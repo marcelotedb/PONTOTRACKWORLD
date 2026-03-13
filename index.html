@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="description" content="PontoTrack - Sistema PWA de registro de ponto eletrônico para equipes de campo e zona rural. Funciona 100% offline com GPS e câmera.">
+    <meta name="keywords" content="ponto eletrônico, registro de ponto, PWA, offline, campo, rural, GPS">
+    
+    <title>PontoTrack - Controle de Ponto Inteligente</title>
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="icons/icon-192x192.png">
+    <link rel="apple-touch-icon" href="icons/icon-192x192.png">
+    
+    <!-- Preconnect -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    
+    <!-- Fonts & Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Leaflet Maps -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    
+    <!-- Export Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <!-- App CSS -->
+    <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+    <!-- ============ OFFLINE BANNER ============ -->
+    <div class="offline-banner" id="offlineBanner">
+        <i class="fas fa-wifi-slash"></i> Modo Offline — Dados salvos localmente
+    </div>
+
+    <!-- ============ LOADING SCREEN ============ -->
+    <div class="loading-screen" id="loadingScreen">
+        <div class="loading-brand">
+            <h1>PontoTrack</h1>
+            <p>Controle de Ponto Inteligente</p>
+        </div>
+        <div class="loader-ring"></div>
+        <div class="loading-text">Preparando o sistema...</div>
+    </div>
+
+    <!-- ============ SYNC STATUS ============ -->
+    <div class="sync-status" id="syncStatus">
+        <i class="fas fa-check-circle"></i> Sincronizado
+    </div>
+
+    <!-- ============ TOAST CONTAINER ============ -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- ============ LOGIN SCREEN ============ -->
+    <div class="login-screen" id="loginScreen">
+        <div class="login-card">
+            <div class="logo">
+                <div class="logo-icon">
+                    <i class="fas fa-clock"></i>
+                </div>
+                <h1>PontoTrack</h1>
+                <p>Registro de Ponto Inteligente</p>
+            </div>
+
+            <div class="login-tabs">
+                <button class="login-tab active" data-type="employee" onclick="app.switchLoginTab('employee', this)">
+                    <i class="fas fa-user"></i> Funcionário
+                </button>
+                <button class="login-tab" data-type="admin" onclick="app.switchLoginTab('admin', this)">
+                    <i class="fas fa-user-shield"></i> Admin
+                </button>
+            </div>
+
+            <form id="loginForm" onsubmit="app.handleLogin(event)">
+                <div id="employeeFields">
+                    <div class="form-group">
+                        <label>ID do Funcionário</label>
+                        <div class="input-wrapper">
+                            <i class="fas fa-id-card"></i>
+                            <input type="text" id="loginId" placeholder="Ex: 001" required autocomplete="off">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Senha</label>
+                        <div class="input-wrapper">
+                            <i class="fas fa-lock"></i>
+                            <input type="password" id="loginPassword" placeholder="Sua senha" required>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="adminFields" style="display:none;">
+                    <div class="form-group">
+                        <label>Login Administrativo</label>
+                        <div class="input-wrapper">
+                            <i class="fas fa-user-shield"></i>
+                            <input type="text" id="adminEmail" autocapitalize="none" placeholder="admin">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Senha</label>
+                        <div class="input-wrapper">
+                            <i class="fas fa-lock"></i>
+                            <input type="password" id="adminPassword" placeholder="Senha administrativa">
+                        </div>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-full" id="loginBtn">
+                    <i class="fas fa-sign-in-alt"></i>
+                    <span>Entrar no Sistema</span>
+                </button>
+            </form>
+
+            <div style="text-align:center;margin-top:16px;">
+                <a href="#" onclick="app.showForgotPassword();return false;" style="font-size:13px;color:var(--text-tertiary);">
+                    Esqueceu a senha?
+                </a>
+            </div>
+
+            <div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--border);text-align:center;font-size:12px;color:var(--text-tertiary);">
+                <p><i class="fas fa-shield-alt" style="color:var(--primary-light);"></i> Acesso seguro • Dados criptografados</p>
+                <p style="margin-top:4px;">Contate o administrador para credenciais</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============ EMPLOYEE APP ============ -->
+    <div class="app-container" id="employeeApp">
+        <div class="container">
+            <!-- Header -->
+            <div class="header">
+                <div class="user-info">
+                    <div class="user-avatar" id="userAvatar">--</div>
+                    <div class="user-details">
+                        <h3 id="userName">Funcionário</h3>
+                        <p id="userRole">Cargo</p>
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <button class="btn-icon" onclick="app.refreshData()" title="Atualizar">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                    <button class="btn-icon danger" onclick="app.logout()" title="Sair">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Clock Section -->
+            <div class="clock-section">
+                <div class="current-time" id="currentTime">00:00:00</div>
+                <div class="current-date" id="currentDate">Carregando...</div>
+                
+                <div class="timer-display" id="timerDisplay">00:00:00</div>
+                
+                <div class="action-buttons">
+                    <button class="btn-action btn-checkin" id="btnCheckin" onclick="app.startRegistration('entry')">
+                        <i class="fas fa-arrow-up"></i>
+                        <span>Entrada</span>
+                    </button>
+                    <button class="btn-action btn-break" id="btnBreak" onclick="app.toggleBreak()" style="display:none;">
+                        <i class="fas fa-coffee"></i>
+                        <span>Pausa</span>
+                    </button>
+                    <button class="btn-action btn-lunch" id="btnLunch" onclick="app.toggleLunch()" style="display:none; background-color: var(--secondary);">
+                        <i class="fas fa-utensils"></i>
+                        <span>Almoço</span>
+                    </button>
+                    <button class="btn-action btn-checkout" id="btnCheckout" onclick="app.startRegistration('exit')" disabled>
+                        <i class="fas fa-arrow-down"></i>
+                        <span>Saída</span>
+                    </button>
+                </div>
+
+                <div class="location-info" id="locationInfo">
+                    <i class="fas fa-map-marker-alt"></i>
+                    <span>Obtendo localização...</span>
+                </div>
+            </div>
+
+            <!-- Quick Stats -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <div>
+                            <div class="stat-value" id="todayHours">0m</div>
+                            <div class="stat-label">Horas Hoje</div>
+                        </div>
+                        <div class="stat-icon"><i class="fas fa-sun"></i></div>
+                    </div>
+                </div>
+                <div class="stat-card green">
+                    <div class="stat-header">
+                        <div>
+                            <div class="stat-value" id="weekHours">0m</div>
+                            <div class="stat-label">Esta Semana</div>
+                        </div>
+                        <div class="stat-icon green"><i class="fas fa-calendar-week"></i></div>
+                    </div>
+                </div>
+                <div class="stat-card orange">
+                    <div class="stat-header">
+                        <div>
+                            <div class="stat-value" id="monthHours">0m</div>
+                            <div class="stat-label">Este Mês</div>
+                        </div>
+                        <div class="stat-icon orange"><i class="fas fa-calendar-alt"></i></div>
+                    </div>
+                </div>
+                <div class="stat-card purple">
+                    <div class="stat-header">
+                        <div>
+                            <div class="stat-value" id="balanceHours">+0h</div>
+                            <div class="stat-label">Banco de Horas</div>
+                        </div>
+                        <div class="stat-icon purple"><i class="fas fa-piggy-bank"></i></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- New: Outdated Services Quick State (Optional) -->
+            <div id="serviceReminder" style="display:none; margin-bottom:16px;">
+                <div class="stat-card" style="background: var(--info-bg); border: 1px solid var(--info);">
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <div style="width:40px;height:40px;background:var(--info);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;">
+                            <i class="fas fa-truck-field"></i>
+                        </div>
+                        <div>
+                            <h4 style="font-size:14px;">Serviços em Campo</h4>
+                            <p style="font-size:12px;color:var(--text-secondary);">Registre suas tarefas ocasionais aqui.</p>
+                        </div>
+                        <button class="btn btn-sm btn-primary" style="margin-left:auto;" onclick="app.navigateTo('services')">Abrir</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="quick-actions no-print">
+                <button class="quick-action-btn" onclick="app.viewFullHistory()">
+                    <i class="fas fa-history"></i>
+                    <span>Histórico</span>
+                </button>
+                <button class="quick-action-btn" onclick="app.cloneYesterday()">
+                    <i class="fas fa-copy"></i>
+                    <span>Mesmo de Ontem</span>
+                </button>
+                <button class="quick-action-btn" onclick="app.openServiceModal()">
+                    <i class="fas fa-plus-circle"></i>
+                    <span>Novo Serviço</span>
+                </button>
+                <button class="quick-action-btn" onclick="app.requestTimeOff()">
+                    <i class="fas fa-umbrella-beach"></i>
+                    <span>Justificativa</span>
+                </button>
+            </div>
+
+            <!-- Recent Records -->
+            <div class="section-card" id="homeSection">
+                <div class="section-header">
+                    <h3 class="section-title">
+                        <i class="fas fa-clock-rotate-left"></i> Registros Recentes
+                    </h3>
+                    <button class="btn btn-sm btn-secondary" onclick="app.viewFullHistory()">Ver Todos</button>
+                </div>
+                <div class="records-list" id="recentRecordsList">
+                    <div class="empty-state">
+                        <i class="fas fa-clipboard-list"></i>
+                        <h3>Nenhum registro ainda</h3>
+                        <p>Seus registros de ponto aparecerão aqui</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Services Section -->
+            <div class="section-card" id="servicesSection" style="display:none;">
+                <div class="section-header" style="flex-wrap: nowrap; align-items: center;">
+                    <h3 class="section-title" style="white-space: nowrap;">
+                        <i class="fas fa-truck-field"></i> Serviços em Campo
+                    </h3>
+                    <button class="btn btn-sm btn-primary" onclick="app.openServiceModal()" style="padding: 8px 12px; font-size: 13px; min-width: 120px;">
+                        <i class="fas fa-plus-circle"></i> Novo Registro
+                    </button>
+                </div>
+                
+                <div class="filter-controls" style="margin-bottom: 20px;">
+                    <label style="font-size:12px; color:var(--text-secondary); margin-bottom:4px; display:block;">Histórico do Mês:</label>
+                    <div style="display:flex; gap:8px;">
+                        <input type="month" id="employeeServiceMonth" class="no-icon-input" style="flex:1;" onchange="app._renderEmployeeServices()">
+                        <button class="btn btn-sm btn-secondary" onclick="app._renderEmployeeServices()"><i class="fas fa-search"></i></button>
+                    </div>
+                </div>
+
+                <div class="records-list" id="employeeServicesList">
+                    <div class="empty-state">
+                        <i class="fas fa-map-location-dot"></i>
+                        <h3>Nenhum serviço registrado</h3>
+                        <p>Registre seus atendimentos fora da sede</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Navigation -->
+        <nav class="bottom-nav no-print">
+            <button class="nav-item active" id="nav-home" onclick="app.navigateTo('home', this)">
+                <i class="fas fa-home"></i>
+                <span>Início</span>
+            </button>
+            <button class="nav-item" id="nav-services" onclick="app.navigateTo('services', this)">
+                <i class="fas fa-truck-field"></i>
+                <span>Serviços</span>
+            </button>
+            <button class="nav-item" id="nav-history" onclick="app.navigateTo('history', this)">
+                <i class="fas fa-history"></i>
+                <span>Histórico</span>
+            </button>
+            <button class="nav-item" id="nav-profile" onclick="app.navigateTo('profile', this)">
+                <i class="fas fa-user"></i>
+                <span>Perfil</span>
+            </button>
+        </nav>
+    </div>
+
+    <!-- ============ ADMIN PANEL ============ -->
+    <div class="admin-panel" id="adminPanel">
+        <div class="container">
+            <div class="header">
+                <div class="user-info">
+                    <div class="user-avatar" style="background:linear-gradient(135deg,var(--warning),var(--danger));">
+                        <i class="fas fa-user-shield" style="font-size:18px;"></i>
+                    </div>
+                    <div class="user-details">
+                        <h3>Painel Administrativo</h3>
+                        <p>Gerenciamento Completo</p>
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <button class="btn-icon" onclick="app.refreshData()" title="Atualizar">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                    <button class="btn-icon danger" onclick="app.logout()" title="Sair">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="tabs">
+                <button class="tab active" onclick="app.switchTab('dashboard', this)">
+                    <i class="fas fa-tachometer-alt"></i> Dashboard
+                </button>
+                <button class="tab" onclick="app.switchTab('employees', this)">
+                    <i class="fas fa-users"></i> Equipe
+                </button>
+                <button class="tab" onclick="app.switchTab('obras', this)">
+                    <i class="fas fa-hard-hat"></i> Obras
+                </button>
+                <button class="tab" onclick="app.switchTab('reports', this)">
+                    <i class="fas fa-chart-pie"></i> Relatórios
+                </button>
+                <button class="tab" onclick="app.switchTab('servicesAdmin', this)">
+                    <i class="fas fa-truck-field"></i> Serviços
+                </button>
+                <button class="tab" onclick="app.switchTab('settings', this)">
+                    <i class="fas fa-sliders-h"></i> Ajustes
+                </button>
+            </div>
+
+            <!-- Dashboard Tab -->
+            <div class="tab-content active" id="dashboardTab">
+                <div class="dashboard-stats">
+                    <div class="dashboard-card">
+                        <h3 id="activeNow">0</h3>
+                        <p>Online Agora</p>
+                        <span class="trend up"><i class="fas fa-signal"></i> <span id="activeTrend">0%</span></span>
+                    </div>
+                    <div class="dashboard-card">
+                        <h3 id="totalEmployees">0</h3>
+                        <p>Funcionários</p>
+                        <span class="trend up"><i class="fas fa-users"></i> <span id="newEmployees">0 ativos</span></span>
+                    </div>
+                    <div class="dashboard-card">
+                        <h3 id="todayTotal">0h</h3>
+                        <p>Horas Hoje</p>
+                        <span class="trend up"><i class="fas fa-clock"></i> Equipe</span>
+                    </div>
+                    <div class="dashboard-card">
+                        <h3 id="lateToday">0</h3>
+                        <p>Atrasos Hoje</p>
+                        <span class="trend down"><i class="fas fa-exclamation-triangle"></i> Alerta</span>
+                    </div>
+                </div>
+
+                <!-- Map -->
+                <div class="section-card">
+                    <div class="section-header">
+                        <h3 class="section-title"><i class="fas fa-map-marked-alt"></i> Mapa de Registros</h3>
+                    </div>
+                    <div class="map-container" id="adminMap"></div>
+                </div>
+
+                <!-- Live Activity -->
+                <div class="section-card">
+                    <div class="section-header">
+                        <h3 class="section-title"><i class="fas fa-bolt"></i> Atividade ao Vivo</h3>
+                        <span class="status-badge status-active" style="font-size:10px;">
+                            <i class="fas fa-circle" style="font-size:6px;animation:pulse 2s infinite;"></i> AO VIVO
+                        </span>
+                    </div>
+                    <div class="records-list" id="liveActivityList">
+                        <div class="empty-state">
+                            <i class="fas fa-satellite-dish"></i>
+                            <h3>Aguardando atividade...</h3>
+                            <p>Os registros aparecerão aqui em tempo real</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Employees Tab -->
+            <div class="tab-content" id="employeesTab">
+                <div class="section-header">
+                    <h3 class="section-title"><i class="fas fa-users"></i> Gerenciar Equipe</h3>
+                    <button class="btn btn-sm btn-primary" onclick="app.openAddEmployeeModal()">
+                        <i class="fas fa-plus"></i> Adicionar
+                    </button>
+                </div>
+                <div class="search-box">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="searchEmployee" placeholder="Buscar por nome, ID ou cargo..." oninput="app.searchEmployees()">
+                </div>
+                <div class="employees-grid" id="employeesGrid"></div>
+            </div>
+
+            <!-- Obras Tab -->
+            <div class="tab-content" id="obrasTab">
+                <div class="section-header">
+                    <h3 class="section-title"><i class="fas fa-hard-hat"></i> Obras / Fazendas</h3>
+                    <button class="btn btn-sm btn-primary" onclick="app.openAddObraModal()">
+                        <i class="fas fa-plus"></i> Nova Obra
+                    </button>
+                </div>
+                <div id="obrasList">
+                    <div class="empty-state">
+                        <i class="fas fa-hard-hat"></i>
+                        <h3>Nenhuma obra cadastrada</h3>
+                        <p>Cadastre obras/fazendas para controlar a proximidade</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Reports Tab -->
+            <div class="tab-content" id="reportsTab">
+                <div class="reports-controls">
+                    <div class="control-grid">
+                        <div class="control-group">
+                            <label>Funcionário</label>
+                            <select id="reportEmployee">
+                                <option value="all">Todos os Funcionários</option>
+                            </select>
+                        </div>
+                        <div class="control-group">
+                            <label>Data Início</label>
+                            <input type="date" id="reportStartDate">
+                        </div>
+                        <div class="control-group">
+                            <label>Data Fim</label>
+                            <input type="date" id="reportEndDate">
+                        </div>
+                    </div>
+                    <div class="export-buttons">
+                        <button class="btn-export btn-excel" onclick="app.generateReport('excel')">
+                            <i class="fas fa-file-excel"></i> Excel
+                        </button>
+                        <button class="btn-export btn-pdf" onclick="app.generateReport('pdf')">
+                            <i class="fas fa-file-pdf"></i> PDF
+                        </button>
+                        <button class="btn btn-sm btn-secondary" onclick="app.generateReport('view')">
+                            <i class="fas fa-eye"></i> Visualizar
+                        </button>
+                    </div>
+                </div>
+                <div class="section-card">
+                    <div id="reportResults">
+                        <div class="empty-state">
+                            <i class="fas fa-chart-bar"></i>
+                            <h3>Selecione os filtros</h3>
+                            <p>Escolha o período e o funcionário para gerar o relatório</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Services Admin Tab -->
+            <div class="tab-content" id="servicesAdminTab">
+                <div class="reports-controls">
+                    <div class="control-grid">
+                        <div class="control-group">
+                            <label>Colaborador</label>
+                            <select id="serviceAdminEmployee">
+                                <option value="all">Todos os Colaboradores</option>
+                            </select>
+                        </div>
+                        <div class="control-group">
+                            <label>Mês de Referência</label>
+                            <div style="display:flex; gap:8px;">
+                                <input type="month" id="serviceAdminMonth" onchange="app.loadAdminServices()">
+                                <button class="btn btn-sm btn-secondary" onclick="app.loadAdminServices()"><i class="fas fa-search"></i></button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div id="adminServicesList">
+                    <div class="empty-state">
+                        <i class="fas fa-search-location"></i>
+                        <h3>Filtre para visualizar</h3>
+                        <p>Os registros de serviços em campo aparecerão aqui</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings Tab -->
+            <div class="tab-content" id="settingsTab">
+                <div class="settings-section">
+                    <div class="settings-group">
+                        <h3><i class="fas fa-cogs"></i> Configurações do Sistema</h3>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Jornada Diária (horas)</label>
+                                <input type="number" id="settingWorkHours" value="8" min="1" max="12" step="0.5" class="no-icon-input">
+                            </div>
+                            <div class="form-group">
+                                <label>Tolerância de Atraso (min)</label>
+                                <input type="number" id="settingTolerance" value="10" min="0" max="60" class="no-icon-input">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Início do Expediente</label>
+                                <input type="time" id="settingStartTime" value="07:30" class="no-icon-input">
+                            </div>
+                            <div class="form-group">
+                                <label>Fim do Expediente</label>
+                                <input type="time" id="settingEndTime" value="17:30" class="no-icon-input">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Notificações</label>
+                            <select id="settingNotifications" class="no-icon-input">
+                                <option value="all">Todas as notificações</option>
+                                <option value="important">Apenas importantes</option>
+                                <option value="none">Desativadas</option>
+                            </select>
+                        </div>
+                        <div class="checkbox-label">
+                            <input type="checkbox" id="settingGeolocation" checked>
+                            <span>Obrigar geolocalização no registro</span>
+                        </div>
+                        <div class="checkbox-label">
+                            <input type="checkbox" id="settingPhoto">
+                            <span>Exigir foto no registro</span>
+                        </div>
+                        <button class="btn btn-primary btn-full" onclick="app.saveSettings()" style="margin-top:12px;">
+                            <i class="fas fa-save"></i> Salvar Configurações
+                        </button>
+                    </div>
+
+                    <div class="settings-group danger-zone">
+                        <h3><i class="fas fa-exclamation-triangle"></i> Zona de Perigo</h3>
+                        <button class="btn btn-danger btn-full" onclick="app.clearAllData()">
+                            <i class="fas fa-trash-alt"></i> Limpar Todos os Dados
+                        </button>
+                        <p style="font-size:12px;color:var(--text-tertiary);margin-top:8px;">
+                            Esta ação remove todos os dados permanentemente.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============ MODALS ============ -->
+
+    <!-- Registration Modal -->
+    <div class="modal" id="registrationModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2><i class="fas fa-fingerprint"></i> Confirmar Registro</h2>
+                <button class="close-btn" onclick="app.closeRegistrationModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="registrationStep1">
+                    <p style="margin-bottom:16px;text-align:center;color:var(--text-secondary);font-size:14px;">
+                        Registrando <strong id="regTypeText" style="color:var(--primary-light);">entrada</strong>
+                    </p>
+                    
+                    <div class="camera-container" id="cameraContainer">
+                        <video id="videoElement" autoplay playsinline></video>
+                        <canvas id="canvasElement"></canvas>
+                        <div class="camera-controls">
+                            <button class="camera-btn" onclick="app.capturePhoto()">
+                                <i class="fas fa-camera"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="captured-photo" id="capturedPhoto" style="display:none;">
+                        <img id="photoPreview" src="" alt="Foto capturada">
+                        <div style="padding:12px;display:flex;gap:10px;">
+                            <button class="btn btn-secondary" onclick="app.retakePhoto()" style="flex:1;">
+                                <i class="fas fa-redo"></i> Tirar Outra
+                            </button>
+                            <button class="btn btn-primary" onclick="app.confirmRegistration()" style="flex:1;">
+                                <i class="fas fa-check"></i> Confirmar
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 16px;">
+                        <textarea id="regObservation" placeholder="Adicionar observação (opcional) - Ex: Cheguei mais cedo para ir a outro local" class="no-icon-input" rows="2" style="resize:none; font-size:13px;"></textarea>
+                    </div>
+
+                    <div style="text-align:center;margin:12px 0;">
+                        <label class="checkbox-label" style="justify-content:center;">
+                            <input type="checkbox" id="skipPhoto" onchange="app.toggleCamera()">
+                            <span>Pular foto</span>
+                        </label>
+                    </div>
+
+                    <button class="btn btn-primary btn-full" onclick="app.confirmRegistration()" id="confirmWithoutPhotoBtn">
+                        <i class="fas fa-check-circle"></i> Registrar Ponto
+                    </button>
+                </div>
+
+                <div id="registrationStep2" style="display:none;text-align:center;padding:32px;">
+                    <div style="width:72px;height:72px;background:var(--success-bg);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+                        <i class="fas fa-check" style="font-size:32px;color:var(--success);"></i>
+                    </div>
+                    <h3 style="margin-bottom:8px;color:var(--text-primary);">Ponto Registrado!</h3>
+                    <p style="color:var(--text-secondary);margin-bottom:20px;font-size:14px;">Seu registro foi salvo com sucesso.</p>
+                    <button class="btn btn-primary btn-full" onclick="app.closeRegistrationModal()">
+                        <i class="fas fa-thumbs-up"></i> Concluir
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Employee Modal -->
+    <div class="modal" id="employeeModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="employeeModalTitle"><i class="fas fa-user-plus"></i> Novo Funcionário</h2>
+                <button class="close-btn" onclick="app.closeModal('employeeModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="employeeForm" onsubmit="app.saveEmployee(event)">
+                    <input type="hidden" id="editEmployeeId">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Nome Completo *</label>
+                            <div class="input-wrapper">
+                                <i class="fas fa-user"></i>
+                                <input type="text" id="empName" placeholder="Nome completo" required>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>ID / Matrícula *</label>
+                            <div class="input-wrapper">
+                                <i class="fas fa-id-card"></i>
+                                <input type="text" id="empId" placeholder="Ex: 001" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Email</label>
+                            <div class="input-wrapper">
+                                <i class="fas fa-envelope"></i>
+                                <input type="email" id="empEmail" placeholder="email@empresa.com">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Cargo *</label>
+                            <div class="input-wrapper">
+                                <i class="fas fa-briefcase"></i>
+                                <input type="text" id="empRole" placeholder="Ex: Operador de Campo" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Departamento</label>
+                            <div class="input-wrapper">
+                                <i class="fas fa-building"></i>
+                                <select id="empDept">
+                                    <option>Operacional</option>
+                                    <option>Administrativo</option>
+                                    <option>Comercial</option>
+                                    <option>Técnico</option>
+                                    <option>Logística</option>
+                                    <option>Agrícola</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Telefone</label>
+                            <div class="input-wrapper">
+                                <i class="fas fa-phone"></i>
+                                <input type="tel" id="empPhone" placeholder="(00) 00000-0000">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Data de Admissão</label>
+                            <div class="input-wrapper">
+                                <i class="fas fa-calendar"></i>
+                                <input type="date" id="empDate">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Status</label>
+                            <div class="input-wrapper">
+                                <i class="fas fa-toggle-on"></i>
+                                <select id="empStatus">
+                                    <option value="active">Ativo</option>
+                                    <option value="inactive">Inativo</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group" style="width:50%">
+                            <label>Salário Base Mensal (R$)</label>
+                            <div class="input-wrapper">
+                                <i class="fas fa-dollar-sign"></i>
+                                <input type="number" step="0.01" id="empSalary" placeholder="Ex: 1412.00">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Senha <span id="passwordLabel">*</span></label>
+                        <div class="input-wrapper">
+                            <i class="fas fa-lock"></i>
+                            <input type="password" id="empPassword" placeholder="Senha de acesso">
+                        </div>
+                        <small>Mínimo 4 caracteres. Funcionário usará para login.</small>
+                    </div>
+                    <div style="display:flex;gap:10px;margin-top:12px;">
+                        <button type="button" class="btn btn-secondary" onclick="app.closeModal('employeeModal')" style="flex:1;">Cancelar</button>
+                        <button type="submit" class="btn btn-primary" style="flex:2;"><i class="fas fa-save"></i> Salvar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div class="modal" id="deleteModal">
+        <div class="modal-content" style="max-width:420px;">
+            <div class="modal-header">
+                <h2 style="color:var(--danger);"><i class="fas fa-exclamation-triangle"></i> Excluir</h2>
+                <button class="close-btn" onclick="app.closeModal('deleteModal')">&times;</button>
+            </div>
+            <div class="modal-body" style="text-align:center;padding:28px;">
+                <div style="width:72px;height:72px;background:var(--danger-bg);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+                    <i class="fas fa-trash-alt" style="font-size:28px;color:var(--danger);"></i>
+                </div>
+                <h3 style="margin-bottom:8px;color:var(--text-primary);">Excluir funcionário?</h3>
+                <p style="color:var(--text-secondary);font-size:14px;">Você está excluindo:</p>
+                <p style="font-size:18px;font-weight:700;color:var(--text-primary);margin:8px 0 16px;" id="deleteEmployeeName">-</p>
+                <p style="color:var(--danger-light);font-size:12px;margin-bottom:20px;">
+                    <i class="fas fa-exclamation-circle"></i> Todos os registros serão excluídos. Ação irreversível.
+                </p>
+                <div style="display:flex;gap:10px;">
+                    <button class="btn btn-secondary" onclick="app.closeModal('deleteModal')" style="flex:1;">Cancelar</button>
+                    <button class="btn btn-danger" onclick="app.confirmDeleteEmployee()" style="flex:1;">
+                        <i class="fas fa-trash"></i> Excluir
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- History Modal -->
+    <div class="modal" id="historyModal">
+        <div class="modal-content" style="max-width:650px;">
+            <div class="modal-header">
+                <h2><i class="fas fa-history"></i> Histórico Completo</h2>
+                <button class="close-btn" onclick="app.closeModal('historyModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+                    <div style="flex:1;min-width:130px;">
+                        <label style="display:block;font-size:11px;font-weight:700;color:var(--text-tertiary);margin-bottom:4px;text-transform:uppercase;">Data</label>
+                        <input type="date" id="fullHistoryDate" onchange="app.loadFullHistory()" class="no-icon-input" style="width:100%;padding:10px;border:2px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-input);color:var(--text-primary);font-size:13px;">
+                    </div>
+                    <div style="flex:1;min-width:130px;">
+                        <label style="display:block;font-size:11px;font-weight:700;color:var(--text-tertiary);margin-bottom:4px;text-transform:uppercase;">Tipo</label>
+                        <select id="fullHistoryType" onchange="app.loadFullHistory()" class="no-icon-input" style="width:100%;padding:10px;border:2px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-input);color:var(--text-primary);font-size:13px;">
+                            <option value="all">Todos</option>
+                            <option value="entry">Entrada</option>
+                            <option value="exit">Saída</option>
+                            <option value="break">Pausa</option>
+                            <option value="break_end">Retorno</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="records-list" id="fullHistoryList" style="max-height:400px;">
+                    <div class="empty-state">
+                        <i class="fas fa-clock"></i>
+                        <h3>Selecione um filtro</h3>
+                        <p>Seus registros aparecerão aqui</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Obra Form Modal -->
+    <div class="modal" id="obraFormModal">
+        <div class="modal-content" style="max-width:500px;">
+            <div class="modal-header">
+                <h2><i class="fas fa-hard-hat"></i> Obra / Fazenda</h2>
+                <button class="close-btn" onclick="app.closeModal('obraFormModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="obraForm" onsubmit="app.saveObra(event)">
+                    <input type="hidden" id="obraId">
+                    <div class="form-group">
+                        <label>Nome da Obra/Fazenda *</label>
+                        <input type="text" id="obraName" placeholder="Ex: Fazenda São João" required class="no-icon-input">
+                    </div>
+                    <div class="form-group">
+                        <label>Endereço/Localização</label>
+                        <input type="text" id="obraAddress" placeholder="Rua, cidade ou referência" class="no-icon-input">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Latitude</label>
+                            <input type="number" id="obraLat" step="any" placeholder="-15.78" class="no-icon-input">
+                        </div>
+                        <div class="form-group">
+                            <label>Longitude</label>
+                            <input type="number" id="obraLng" step="any" placeholder="-47.93" class="no-icon-input">
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-full" onclick="app.getObraLocationForm()" style="margin-bottom:12px; padding: 6px; font-size: 13px;">
+                        <i class="fas fa-map-marker-alt"></i> Pegar minha localização atual
+                    </button>
+                    <div class="form-group">
+                        <label>Raio de Tolerância (metros)</label>
+                        <input type="number" id="obraRadius" value="500" min="50" max="10000" class="no-icon-input">
+                        <small>Distância máxima para registrar ponto nesta obra</small>
+                    </div>
+                    <div class="checkbox-label">
+                        <input type="checkbox" id="obraActive" checked>
+                        <span>Obra ativa</span>
+                    </div>
+                    <div style="display:flex;gap:10px;margin-top:12px;">
+                        <button type="button" class="btn btn-secondary" onclick="app.closeModal('obraFormModal')" style="flex:1;">Cancelar</button>
+                        <button type="submit" class="btn btn-primary" style="flex:2;"><i class="fas fa-save"></i> Salvar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Service Registration Modal -->
+    <div class="modal" id="serviceModal">
+        <div class="modal-content" style="max-width:500px;">
+            <div class="modal-header">
+                <h2><i class="fas fa-truck-field"></i> Registro de Serviço</h2>
+                <button class="close-btn" onclick="app.closeModal('serviceModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="serviceForm" onsubmit="app.saveServiceRecord(event)">
+                    <div class="form-group">
+                        <label>Descrição do Serviço *</label>
+                        <textarea id="svcDescription" placeholder="O que foi feito? Ex: Manutenção preventiva no trator" required class="no-icon-input" rows="3"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Local do Serviço *</label>
+                        <div class="input-wrapper">
+                            <i class="fas fa-map-location-dot"></i>
+                            <input type="text" id="svcLocationName" placeholder="Nome da fazenda, cliente ou endereço" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Data</label>
+                            <input type="date" id="svcDate" class="no-icon-input" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Hora</label>
+                            <input type="time" id="svcTime" class="no-icon-input" required>
+                        </div>
+                    </div>
+                    <div class="location-capture-box" style="background:var(--bg-secondary); padding:16px; border-radius:var(--radius-md); border:1px solid var(--border); margin-bottom:16px;">
+                        <div id="svcLocationStatus" style="font-size:12px; color:var(--text-secondary); margin-bottom:10px; display:flex; align-items:center; gap:8px;">
+                            <i class="fas fa-location-dot"></i> Coordenadas não capturadas
+                        </div>
+                        <button type="button" class="btn btn-secondary btn-full btn-sm" onclick="app.captureServiceLocation()">
+                            <i class="fas fa-crosshairs"></i> Registrar Localização Atual (GPS)
+                        </button>
+                        <input type="hidden" id="svcLat">
+                        <input type="hidden" id="svcLng">
+                    </div>
+                    <div style="display:flex;gap:10px;">
+                        <button type="button" class="btn btn-secondary" onclick="app.closeModal('serviceModal')" style="flex:1;">Cancelar</button>
+                        <button type="submit" class="btn btn-primary" style="flex:2;"><i class="fas fa-save"></i> Registrar Serviço</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============ JS MODULES ============ -->
+    <!-- Record Details Modal -->
+    <div class="modal" id="detailsModal">
+        <div class="modal-content" style="max-width:500px;">
+            <div class="modal-header">
+                <h2><i class="fas fa-info-circle"></i> Detalhes do Registro</h2>
+                <button class="close-btn" onclick="app.closeModal('detailsModal')">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 0;">
+                <div id="detailsMap" style="height: 250px; width: 100%; background: #eee;"></div>
+                <div style="padding: 20px;" id="detailsContent">
+                    <!-- Conteúdo dinâmico -->
+                </div>
+                <div style="padding: 0 20px 20px;">
+                    <button class="btn btn-primary btn-full" onclick="app.closeModal('detailsModal')">Fechar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/db.js"></script>
+    <script src="js/i18n.js"></script>
+    <script src="js/notifications.js"></script>
+    <script src="js/geo.js"></script>
+    <script src="js/sync.js"></script>
+    <script src="js/reports.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

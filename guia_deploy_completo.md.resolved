@@ -1,0 +1,327 @@
+# 🚀 Guia Completo: PontoTrack no Ar — Firebase + Netlify
+
+> Passo a passo para colocar o PontoTrack funcionando em qualquer celular, com banco de dados grátis e hospedagem grátis.
+
+---
+
+## 📋 Visão Geral
+
+```mermaid
+graph LR
+    A["📱 Celular/PC"] -->|"Acessa"| B["🌐 Netlify<br/>Hospedagem Grátis"]
+    B -->|"Carrega App"| A
+    A -->|"Salva dados"| C["🔥 Firebase<br/>Banco Grátis"]
+    C -->|"Sincroniza"| A
+```
+
+| Serviço | Plano | Limite Grátis | Custo |
+|---------|-------|---------------|-------|
+| **Netlify** | Starter | 100GB banda/mês, deploy ilimitado | R$ 0 |
+| **Firebase Firestore** | Spark | 1GB armazenamento, 50K leituras/dia | R$ 0 |
+| **Firebase Auth** | Spark | 50K usuários/mês | R$ 0 |
+
+> [!TIP]
+> Para uma empresa com até ~50 funcionários, o plano grátis de ambos é **mais que suficiente**.
+
+---
+
+## PARTE 1: CONFIGURAR O FIREBASE (Banco de Dados)
+
+### Passo 1.1 — Criar conta no Firebase
+
+1. Acesse **[https://console.firebase.google.com](https://console.firebase.google.com)**
+2. Faça login com sua **conta Google** (Gmail)
+3. Clique em **"Criar um projeto"** (ou "Add project")
+
+````carousel
+### Tela 1: Criar Projeto
+1. Nome do projeto: **`pontotrack`** (ou o nome que preferir)
+2. Clique **"Continuar"**
+<!-- slide -->
+### Tela 2: Google Analytics
+1. Pode **desativar** o Google Analytics (não é necessário)
+2. Clique **"Criar projeto"**
+<!-- slide -->
+### Tela 3: Aguardar
+1. Aguarde a criação (~30 segundos)
+2. Clique **"Continuar"** quando estiver pronto
+````
+
+### Passo 1.2 — Ativar o Firestore (Banco de Dados)
+
+1. No painel do Firebase, clique em **"Firestore Database"** no menu lateral (em "Build")
+2. Clique em **"Criar banco de dados"** (Create Database)
+3. **Localização**: Escolha `southamerica-east1` (São Paulo) para menor latência
+4. **Modo de segurança**: Selecione **"Iniciar no modo de teste"** (Start in test mode)
+   - Isso permite leitura/escrita livre por 30 dias — depois vamos ajustar as regras
+5. Clique **"Criar"**
+
+> [!IMPORTANT]
+> O modo de teste expira em 30 dias. No Passo 1.5 vamos configurar regras de segurança permanentes.
+
+### Passo 1.3 — Registrar o App Web
+
+1. Na página inicial do projeto Firebase, clique no ícone **`</>`** (Web)
+2. Apelido do app: **`PontoTrack Web`**
+3. **NÃO** marque "Firebase Hosting" (vamos usar Netlify)
+4. Clique **"Registrar app"**
+5. Você verá um bloco de código como este:
+
+```javascript
+const firebaseConfig = {
+  apiKey: "AIzaSyD_SEU_CODIGO_AQUI",
+  authDomain: "seu-projeto.firebaseapp.com",
+  projectId: "seu-projeto",
+  storageBucket: "seu-projeto.appspot.com",
+  messagingSenderId: "123456789",
+  appId: "1:123456789:web:abcdef123456"
+};
+```
+
+> [!CAUTION]
+> **COPIE ESSE BLOCO INTEIRO!** Você vai precisar dele no próximo passo.
+
+### Passo 1.4 — Colocar suas credenciais no código
+
+Abra o arquivo [js/app.js](file:///c:/Users/marce/OneDrive/%C3%81rea%20de%20Trabalho/field-time-tracker/js/app.js) e encontre o bloco `firebase.initializeApp({...})` (aproximadamente linha 30). **Substitua** as credenciais pelas suas:
+
+```diff
+  firebase.initializeApp({
+-    apiKey: "AIzaSyDEIIaffAQRqfZWNrRQXyC7hoxjWFLaty4",
+-    authDomain: "ponto-ef9ce.firebaseapp.com",
+-    projectId: "ponto-ef9ce",
+-    storageBucket: "ponto-ef9ce.firebasestorage.app",
+-    messagingSenderId: "128651762804",
+-    appId: "1:128651762804:web:2fbd71dcac4e0e4c700521"
++    apiKey: "SUA_API_KEY_AQUI",
++    authDomain: "SEU_PROJETO.firebaseapp.com",
++    projectId: "SEU_PROJETO",
++    storageBucket: "SEU_PROJETO.appspot.com",
++    messagingSenderId: "SEU_SENDER_ID",
++    appId: "SEU_APP_ID"
+  });
+```
+
+### Passo 1.5 — Configurar Regras de Segurança do Firestore
+
+1. No Firebase Console, vá em **Firestore Database → Regras** (Rules)
+2. **Apague** tudo e cole estas regras:
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Funcionários - qualquer autenticado pode ler, admin pode escrever
+    match /employees/{employeeId} {
+      allow read: if true;
+      allow write: if true;
+    }
+    
+    // Registros de ponto - qualquer um pode ler/escrever (o app controla acesso)
+    match /records/{recordId} {
+      allow read: if true;
+      allow write: if true;
+    }
+    
+    // Obras
+    match /obras/{obraId} {
+      allow read: if true;
+      allow write: if true;
+    }
+    
+    // Configurações
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if true;
+    }
+  }
+}
+```
+
+3. Clique **"Publicar"** (Publish)
+
+> [!NOTE]
+> Essas regras permitem acesso aberto, o que é adequado para um app interno de empresa. Se quiser segurança mais avançada com Firebase Auth, posso ajudar a implementar depois.
+
+### Passo 1.6 — Verificar que o Firestore está funcionando
+
+O Firestore já está pronto! Quando você usar o app, verá as coleções (`employees`, `records`, `obras`, `settings`) sendo criadas automaticamente no console do Firebase.
+
+---
+
+## PARTE 2: HOSPEDAR NA NETLIFY (Grátis)
+
+### Passo 2.1 — Criar conta na Netlify
+
+1. Acesse **[https://app.netlify.com](https://app.netlify.com)**
+2. Clique **"Sign up"**
+3. Recomendo fazer login com **GitHub** ou **Email**
+
+### Passo 2.2 — Método FÁCIL: Deploy por Arrastar e Soltar (Drag & Drop)
+
+Este é o método mais simples — **sem linha de comando!**
+
+1. No painel da Netlify, clique em **"Add new site"** → **"Deploy manually"**
+2. Aparecerá uma área que diz **"Drag and drop your site output folder here"**
+3. No seu computador, abra a pasta do projeto:
+   ```
+   C:\Users\marce\OneDrive\Área de Trabalho\field-time-tracker
+   ```
+4. **Selecione TODOS os arquivos** dentro da pasta (não a pasta em si):
+   - [index.html](file:///c:/Users/marce/OneDrive/%C3%81rea%20de%20Trabalho/field-time-tracker/index.html)
+   - [manifest.json](file:///c:/Users/marce/OneDrive/%C3%81rea%20de%20Trabalho/field-time-tracker/manifest.json)
+   - [sw.js](file:///c:/Users/marce/OneDrive/%C3%81rea%20de%20Trabalho/field-time-tracker/sw.js)
+   - Pasta [css/](file:///c:/Users/marce/OneDrive/%C3%81rea%20de%20Trabalho/field-time-tracker/css/app.css)
+   - Pasta [js/](file:///c:/Users/marce/OneDrive/%C3%81rea%20de%20Trabalho/field-time-tracker/sw.js)
+   - Pasta `icons/`
+5. **Arraste e solte** na área da Netlify
+6. Aguarde o upload (~10 segundos)
+7. A Netlify vai gerar uma URL como: `https://funny-name-123456.netlify.app`
+
+> [!TIP]
+> Você pode renomear! Vá em **Site configuration → Change site name** e coloque algo como `pontotrack-suaempresa`.
+> A URL ficará: **`https://pontotrack-suaempresa.netlify.app`**
+
+### Passo 2.3 — Método com GitHub (Recomendado para atualizações)
+
+Este método configura **deploy automático** — toda vez que você atualizar o código no GitHub, a Netlify publica automaticamente.
+
+#### 2.3.1 — Criar repositório no GitHub
+
+1. Acesse **[https://github.com/new](https://github.com/new)**
+2. Nome: **`pontotrack`**
+3. Marque como **"Private"** (privado)
+4. Clique **"Create repository"**
+
+#### 2.3.2 — Enviar código para o GitHub
+
+Abra o terminal na pasta do projeto e execute:
+
+```bash
+git init
+git add .
+git commit -m "PontoTrack v1.0 - Sistema de ponto eletrônico"
+git branch -M main
+git remote add origin https://github.com/SEU_USUARIO/pontotrack.git
+git push -u origin main
+```
+
+#### 2.3.3 — Conectar Netlify ao GitHub
+
+1. Na Netlify, clique em **"Add new site"** → **"Import an existing project"**
+2. Selecione **"GitHub"**
+3. Autorize a Netlify no GitHub
+4. Selecione o repositório **`pontotrack`**
+5. Configurações de build:
+   - **Branch**: `main`
+   - **Build command**: (deixe em branco — não precisa de build)
+   - **Publish directory**: `.` (ponto — significa a raiz)
+6. Clique **"Deploy site"**
+
+> [!IMPORTANT]
+> Agora, toda vez que fizer `git push`, a Netlify republica automaticamente!
+
+### Passo 2.4 — Configurar headers para PWA
+
+Crie um arquivo `_headers` na raiz do projeto para otimizar o cache:
+
+```
+/*
+  X-Frame-Options: DENY
+  X-XSS-Protection: 1; mode=block
+  X-Content-Type-Options: nosniff
+
+/sw.js
+  Cache-Control: no-cache
+
+/manifest.json
+  Content-Type: application/manifest+json
+```
+
+### Passo 2.5 — Criar arquivo de redirecionamento SPA
+
+Crie um arquivo `_redirects` na raiz para garantir que todas as rotas funcionem:
+
+```
+/*    /index.html   200
+```
+
+---
+
+## PARTE 3: CONFIGURAÇÃO FINAL
+
+### Passo 3.1 — Atualizar o Service Worker com a URL correta
+
+Após obter sua URL da Netlify (ex: `https://pontotrack-suaempresa.netlify.app`), o Service Worker já funciona automaticamente — não precisa de alterações.
+
+### Passo 3.2 — Testar no celular
+
+1. **Abra o Chrome** no celular
+2. Acesse sua URL: **`https://pontotrack-suaempresa.netlify.app`**
+3. Na tela de login, acesse como **Admin** para cadastrar funcionários
+4. **Instalar como app**: 
+   - **Android**: Menu (⋮) → "Adicionar à tela inicial" ou "Instalar app"
+   - **iPhone**: Compartilhar (⬆) → "Adicionar à Tela de Início"
+5. O ícone do PontoTrack aparecerá na tela inicial como um app nativo!
+
+### Passo 3.3 — Fluxo de uso
+
+```mermaid
+graph TD
+    A["👨‍💼 Admin acessa o app"] --> B["Cadastra funcionários<br/>ID + Senha"]
+    B --> C["Informa ID e senha<br/>a cada funcionário"]
+    C --> D["📱 Funcionários instalam<br/>o app no celular"]
+    D --> E["Fazem login com<br/>ID e senha"]
+    E --> F["Registram ponto diariamente<br/>Entrada → Pausa → Retorno → Saída"]
+    F --> G["📊 Admin acompanha<br/>via Dashboard"]
+    G --> H["Exporta relatórios<br/>PDF / Excel"]
+```
+
+---
+
+## PARTE 4: DOMÍNIO PERSONALIZADO (OPCIONAL)
+
+Se quiser uma URL profissional como `ponto.suaempresa.com.br`:
+
+1. Compre um domínio (Registro.br ~R$40/ano, ou Cloudflare ~R$50/ano)
+2. Na Netlify: **Site settings → Domain management → Add custom domain**
+3. Siga as instruções para apontar o DNS
+4. A Netlify configura **SSL grátis** (HTTPS) automaticamente
+
+---
+
+## 🔧 Resumo de Custos
+
+| Item | Custo |
+|------|-------|
+| Hospedagem (Netlify) | **R$ 0** |
+| Banco de dados (Firebase) | **R$ 0** |
+| SSL/HTTPS | **R$ 0** (incluído na Netlify) |
+| Domínio personalizado (opcional) | ~R$ 40/ano |
+| **TOTAL** | **R$ 0** (ou R$ 40/ano com domínio) |
+
+---
+
+## ❓ Perguntas Frequentes
+
+### O app funciona sem internet?
+**Sim!** Após a primeira visita, o app funciona 100% offline. Os registros são salvos localmente e sincronizados quando a internet voltar.
+
+### Quantos funcionários posso ter?
+No plano grátis do Firebase, até **~50-100 funcionários** sem problemas. A Netlify não tem limite de usuários.
+
+### O app funciona qual celular?
+Qualquer celular com **Chrome, Firefox ou Safari** atualizado. Android 5+ e iOS 12+.
+
+### Os dados são seguros?
+- Conexão HTTPS criptografada (Netlify)
+- Dados salvos no Firebase (servidores Google)
+- Senhas armazenadas localmente no IndexedDB do dispositivo
+
+### Como atualizar o app?
+- **Via GitHub**: Faça `git push` e a Netlify publica automaticamente
+- **Via Drag & Drop**: Arraste os arquivos atualizados na Netlify
+
+### Como fazer backup dos dados?
+No Firebase Console (console.firebase.google.com), você pode exportar os dados do Firestore a qualquer momento.

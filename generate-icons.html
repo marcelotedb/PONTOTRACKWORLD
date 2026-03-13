@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>PontoTrack Icon Generator</title>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<script>
+const sizes = [72, 96, 128, 144, 152, 192, 384, 512];
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+function generateIcon(size) {
+  canvas.width = size;
+  canvas.height = size;
+  
+  // Background gradient
+  const gradient = ctx.createLinearGradient(0, 0, size, size);
+  gradient.addColorStop(0, '#6366f1');
+  gradient.addColorStop(1, '#06b6d4');
+  
+  // Rounded rect background
+  const r = size * 0.2;
+  ctx.beginPath();
+  ctx.moveTo(r, 0);
+  ctx.lineTo(size - r, 0);
+  ctx.quadraticCurveTo(size, 0, size, r);
+  ctx.lineTo(size, size - r);
+  ctx.quadraticCurveTo(size, size, size - r, size);
+  ctx.lineTo(r, size);
+  ctx.quadraticCurveTo(0, size, 0, size - r);
+  ctx.lineTo(0, r);
+  ctx.quadraticCurveTo(0, 0, r, 0);
+  ctx.closePath();
+  ctx.fillStyle = gradient;
+  ctx.fill();
+  
+  // Clock circle
+  ctx.beginPath();
+  const cx = size / 2;
+  const cy = size / 2;
+  const cr = size * 0.3;
+  ctx.arc(cx, cy, cr, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.lineWidth = size * 0.04;
+  ctx.stroke();
+  
+  // Clock hands
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx, cy - cr * 0.65);
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = size * 0.05;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+  
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + cr * 0.5, cy + cr * 0.15);
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = size * 0.04;
+  ctx.stroke();
+  
+  // Center dot
+  ctx.beginPath();
+  ctx.arc(cx, cy, size * 0.03, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff';
+  ctx.fill();
+  
+  // GPS pin indicator
+  ctx.beginPath();
+  const px = cx + cr * 0.8;
+  const py = cy - cr * 0.8;
+  const ps = size * 0.08;
+  ctx.arc(px, py, ps, 0, Math.PI * 2);
+  ctx.fillStyle = '#22c55e';
+  ctx.fill();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = size * 0.02;
+  ctx.stroke();
+  
+  return canvas.toDataURL('image/png');
+}
+
+sizes.forEach(size => {
+  const dataUrl = generateIcon(size);
+  const link = document.createElement('a');
+  link.download = `icon-${size}x${size}.png`;
+  link.href = dataUrl;
+  link.click();
+});
+
+document.body.innerHTML = '<h1 style="font-family:sans-serif;color:green;">✅ Ícones gerados! Verifique seus downloads.</h1>';
+</script>
+</body>
+</html>
