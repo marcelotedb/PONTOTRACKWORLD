@@ -2,7 +2,7 @@
   "name": "PontoTrack - Controle de Ponto Inteligente",
   "short_name": "PontoTrack",
   "description": "Sistema PWA de registro de ponto eletrônico para equipes de campo e zona rural. Funciona 100% offline.",
-  "start_url": "/",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#0f172a",
   "theme_color": "#6366f1",
@@ -65,7 +65,7 @@
       "name": "Registrar Ponto",
       "short_name": "Ponto",
       "description": "Registrar entrada ou saída",
-      "url": "/?action=clock",
+      "url": "./index.html?action=clock",
       "icons": [{ "src": "icons/icon-96x96.png", "sizes": "96x96" }]
     }
   ]

@@ -4,28 +4,23 @@
 //             Network First + Cache Fallback para API/dados
 // ============================================================
 
-const CACHE_NAME = 'pontotrack-v2.8';
-const STATIC_CACHE = 'pontotrack-static-v2.8';
-const DYNAMIC_CACHE = 'pontotrack-dynamic-v2.8';
+const CACHE_NAME = 'pontotrack-v2.9';
+const STATIC_CACHE = 'pontotrack-static-v2.9';
+const DYNAMIC_CACHE = 'pontotrack-dynamic-v2.9';
 
 // Assets que devem ser cacheados na instalação
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/css/app.css',
-  '/js/app.js',
-  '/js/db.js',
-  '/js/auth.js',
-  '/js/clock.js',
-  '/js/geo.js',
-  '/js/camera.js',
-  '/js/admin.js',
-  '/js/reports.js',
-  '/js/sync.js',
-  '/js/obras.js',
-  '/js/i18n.js',
-  '/js/notifications.js',
-  '/manifest.json',
+  './',
+  'index.html',
+  'css/app.css',
+  'js/app.js',
+  'js/db.js',
+  'js/geo.js',
+  'js/reports.js',
+  'js/sync.js',
+  'js/i18n.js',
+  'js/notifications.js',
+  'manifest.json',
   'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap',
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
@@ -125,7 +120,7 @@ async function networkFirst(request) {
 
     // Fallback para página offline
     if (request.headers.get('accept')?.includes('text/html')) {
-      const offlineCache = await caches.match('/index.html');
+      const offlineCache = await caches.match('index.html') || await caches.match('./');
       if (offlineCache) return offlineCache;
     }
 
@@ -163,10 +158,10 @@ self.addEventListener('push', event => {
 
   const options = {
     body: data.body || 'Você tem uma nova notificação',
-    icon: '/icons/icon-192x192.png',
-    badge: '/icons/icon-72x72.png',
+    icon: 'icons/icon-192x192.png',
+    badge: 'icons/icon-72x72.png',
     vibrate: [200, 100, 200],
-    data: data.url || '/',
+    data: data.url || './',
     actions: [
       { action: 'open', title: 'Abrir' },
       { action: 'close', title: 'Fechar' }
