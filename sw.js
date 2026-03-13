@@ -1,12 +1,12 @@
 // ============================================================
-// PontoTrack - Service Worker v2.1
+// PontoTrack - Service Worker v3.0
 // Estratégia: Cache First + Network Fallback para assets
 //             Network First + Cache Fallback para API/dados
 // ============================================================
 
-const CACHE_NAME = 'pontotrack-v2.9';
-const STATIC_CACHE = 'pontotrack-static-v2.9';
-const DYNAMIC_CACHE = 'pontotrack-dynamic-v2.9';
+const CACHE_NAME = 'pontotrack-v3.0';
+const STATIC_CACHE = 'pontotrack-static-v3.0';
+const DYNAMIC_CACHE = 'pontotrack-dynamic-v3.0';
 
 // Assets que devem ser cacheados na instalação
 const STATIC_ASSETS = [
@@ -31,7 +31,7 @@ const STATIC_ASSETS = [
 
 // Instalar Service Worker
 self.addEventListener('install', event => {
-  console.log('[SW] Instalando Service Worker v2.0...');
+  console.log('[SW] Instalando Service Worker v3.0...');
   event.waitUntil(
     caches.open(STATIC_CACHE)
       .then(cache => {
@@ -50,7 +50,7 @@ self.addEventListener('install', event => {
 
 // Ativar Service Worker
 self.addEventListener('activate', event => {
-  console.log('[SW] Ativando Service Worker v2.0...');
+  console.log('[SW] Ativando Service Worker v3.0...');
   event.waitUntil(
     caches.keys().then(cacheNames => {
       return Promise.all(

@@ -799,6 +799,18 @@ body.is-offline .header {
   box-shadow: 0 6px 20px rgba(245, 158, 11, 0.3);
 }
 
+.btn-lunch {
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  color: #fff;
+  box-shadow: 0 6px 20px var(--primary-glow);
+}
+
+.btn-extra {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #fff;
+  box-shadow: 0 6px 20px rgba(245, 158, 11, 0.3);
+}
+
 /* --- Location Info --- */
 .location-info {
   background: var(--bg-primary);

@@ -142,22 +142,33 @@ class ReportsManager {
   }
 
   _calculateDayStats(dayRecords, empInfo) {
+    const sorted = [...dayRecords].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    
+    let workedMin = 0;
+    let entryTime = null;
+
+    for (const r of sorted) {
+      if (r.type === 'entry' || r.type === 'extra_entry') {
+        if (!entryTime) entryTime = new Date(r.timestamp);
+      } else if ((r.type === 'break' || r.type === 'lunch') && entryTime) {
+        workedMin += Math.max(0, Math.floor((new Date(r.timestamp) - entryTime) / 60000));
+        entryTime = null;
+      } else if ((r.type === 'break_end' || r.type === 'lunch_end') && !entryTime) {
+        entryTime = new Date(r.timestamp);
+      } else if ((r.type === 'exit' || r.type === 'extra_exit') && entryTime) {
+        workedMin += Math.max(0, Math.floor((new Date(r.timestamp) - entryTime) / 60000));
+        entryTime = null;
+      }
+    }
+
     const entry = dayRecords.find(r => r.type === 'entry');
     const exit = dayRecords.find(r => r.type === 'exit');
     const lunchOut = dayRecords.find(r => r.type === 'lunch' || r.type === 'break');
     const lunchIn = dayRecords.find(r => r.type === 'lunch_end' || r.type === 'break_end');
+    const extraEntry = dayRecords.find(r => r.type === 'extra_entry');
+    const extraExit = dayRecords.find(r => r.type === 'extra_exit');
 
-    let workedMin = 0;
-    if (entry && exit) {
-      const totalMin = Math.floor((new Date(exit.timestamp) - new Date(entry.timestamp)) / 60000);
-      let lunchMin = 0;
-      if (lunchOut && lunchIn) {
-        lunchMin = Math.floor((new Date(lunchIn.timestamp) - new Date(lunchOut.timestamp)) / 60000);
-      }
-      workedMin = Math.max(0, totalMin - lunchMin);
-    }
-
-    const dateStr = entry ? entry.date : dayRecords[0].date;
+    const dateStr = dayRecords[0].date;
     const dateObj = this._parseDate(dateStr);
     const dayOfWeekStr = this._getWeekdayName(dateStr);
     const dayIndex = dateObj.getDay(); // 0=Domingo, 6=Sábado
@@ -169,10 +180,8 @@ class ReportsManager {
     
     if (isSpecialEmp) {
       if (dayIndex === 6 || dayIndex === 0) {
-        // Sábado e Domingo não tem carga horária padrão
         expectedMin = 0;
       }
-      // Feriados em dias da semana contabilizam 8h diárias, então expectedMin continua 8*60
     } else {
       if (dayIndex === 0) { // Domingo
         expectedMin = 0;
@@ -181,27 +190,30 @@ class ReportsManager {
       }
     }
 
-    const netOvertime = workedMin - expectedMin; // Pode ser negativo quando falta trabalho
+    const netOvertime = workedMin - expectedMin;
     const overtimeMin = Math.max(0, netOvertime);
 
-    // Cálculo Monetário de Hora Extra do dia (para a tabela diária, apenas se for extra real daquele dia)
     let overtimeValue = 0;
     if (overtimeMin > 0) {
       overtimeValue = this._calculateHourlyRate(overtimeMin, dayIndex, isSpecialEmp, empInfo);
     }
 
+    // Notas: inclui observações de todos os registros
+    let notes = dayRecords.map(r => r.observation).filter(Boolean).join('; ');
+    if (extraEntry) notes = `[Serviço Extra] ${notes}`;
+
     return {
       date: dateStr,
       dayOfWeek: dayOfWeekStr,
-      entry: entry ? entry.time : '--:--',
+      entry: entry ? entry.time : (extraEntry ? `Extra: ${extraEntry.time}` : '--:--'),
       lunchOut: lunchOut ? lunchOut.time : '--:--',
       lunchIn: lunchIn ? lunchIn.time : '--:--',
-      exit: exit ? exit.time : '--:--',
+      exit: exit ? exit.time : (extraExit ? `Extra: ${extraExit.time}` : '--:--'),
       worked: workedMin,
       overtime: overtimeMin,
       netOvertime: netOvertime,
       overtimeValue: overtimeValue,
-      notes: dayRecords.map(r => r.observation).filter(Boolean).join('; ')
+      notes: notes
     };
   }
 

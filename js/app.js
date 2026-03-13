@@ -353,6 +353,7 @@ class PontoTrackApp {
     const btnCheckout = document.getElementById('btnCheckout');
     const btnBreak = document.getElementById('btnBreak');
     const btnLunch = document.getElementById('btnLunch');
+    const btnExtra = document.getElementById('btnExtra');
     const timerDisplay = document.getElementById('timerDisplay');
 
     // IMPROVEMENT 2: Disable/Hide button after first punch
@@ -373,18 +374,36 @@ class PontoTrackApp {
     if (btnCheckout) btnCheckout.disabled = !entryRecord || !!exitRecord;
     if (timerDisplay) timerDisplay.classList.remove('active');
 
+    // Extra button logic
+    if (btnExtra) {
+      if (exitRecord) {
+        btnExtra.style.display = 'flex';
+        if (last && last.type === 'extra_entry') {
+          btnExtra.innerHTML = '<i class="fas fa-stop-circle"></i><span>Finalizar Extra</span>';
+          btnExtra.style.backgroundColor = 'var(--danger)';
+        } else {
+          btnExtra.innerHTML = '<i class="fas fa-tools"></i><span>Serviço Extra</span>';
+          btnExtra.style.backgroundColor = 'var(--warning)';
+        }
+      } else {
+        btnExtra.style.display = 'none';
+      }
+    }
+
     if (!last) return;
 
-    if (last.type === 'entry' || last.type === 'break_end' || last.type === 'lunch_end') {
-      this.workStartTime = new Date(entryRecord.timestamp);
+    if (last.type === 'entry' || last.type === 'break_end' || last.type === 'lunch_end' || last.type === 'extra_entry') {
+      const baseEntry = entryRecord || last; // Fallback to last if entryRecord not found (unlikely)
+      this.workStartTime = new Date(baseEntry.timestamp);
+      
       if (btnCheckin) btnCheckin.disabled = true;
       if (btnCheckout) btnCheckout.disabled = !!exitRecord;
       
-      if (btnBreak && !breakEndRecord) {
+      if (btnBreak && !breakEndRecord && last.type !== 'extra_entry') {
         btnBreak.style.display = 'flex';
         btnBreak.innerHTML = '<i class="fas fa-coffee"></i><span>Pausa</span>';
       }
-      if (btnLunch && !lunchEndRecord) {
+      if (btnLunch && !lunchEndRecord && last.type !== 'extra_entry') {
         btnLunch.style.display = 'flex';
         btnLunch.innerHTML = '<i class="fas fa-utensils"></i><span>Almoço</span>';
       }
@@ -415,7 +434,7 @@ class PontoTrackApp {
       if (timerDisplay) timerDisplay.classList.add('active');
       this.isOnBreak = true;
       this.currentBreakType = 'lunch';
-    } else if (last.type === 'exit') {
+    } else if (last.type === 'exit' || last.type === 'extra_exit') {
       this.workStartTime = null;
       if (timerDisplay) {
         timerDisplay.textContent = '00:00:00';
@@ -469,7 +488,9 @@ class PontoTrackApp {
       break: { icon: 'coffee', label: 'Pausa', cls: 'break' },
       break_end: { icon: 'play', label: 'Retorno', cls: 'break_end' },
       lunch: { icon: 'utensils', label: 'Almoço', cls: 'break' },
-      lunch_end: { icon: 'play', label: 'Ret. Almoço', cls: 'break_end' }
+      lunch_end: { icon: 'play', label: 'Ret. Almoço', cls: 'break_end' },
+      extra_entry: { icon: 'tools', label: 'Serviço Extra', cls: 'entry' },
+      extra_exit: { icon: 'stop-circle', label: 'Fim Extra', cls: 'exit' }
     };
 
     container.innerHTML = records.map(r => {
@@ -502,7 +523,16 @@ class PontoTrackApp {
   startRegistration(type) {
     this.currentRegistration = { type };
 
-    const typeNames = { entry: 'entrada', exit: 'saída', break: 'pausa', break_end: 'retorno', lunch: 'almoço', lunch_end: 'retorno do almoço' };
+    const typeNames = { 
+      entry: 'entrada', 
+      exit: 'saída', 
+      break: 'pausa', 
+      break_end: 'retorno', 
+      lunch: 'almoço', 
+      lunch_end: 'retorno do almoço',
+      extra_entry: 'início de serviço extra',
+      extra_exit: 'fim de serviço extra'
+    };
     document.getElementById('regTypeText').textContent = typeNames[type] || 'ponto';
     document.getElementById('registrationModal').classList.add('active');
 
@@ -528,6 +558,19 @@ class PontoTrackApp {
 
   toggleLunch() {
     this.startRegistration(this.isOnBreak ? 'lunch_end' : 'lunch');
+  }
+
+  async toggleExtraService() {
+    const today = new Date().toLocaleDateString('pt-BR');
+    const records = await window.ptDB.getRecordsByEmployee(this.currentUser.id);
+    const todayRecords = records.filter(r => r.date === today).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    const last = todayRecords[todayRecords.length - 1];
+
+    if (last && last.type === 'extra_entry') {
+      this.startRegistration('extra_exit');
+    } else {
+      this.startRegistration('extra_entry');
+    }
   }
 
   async _initCamera() {
@@ -645,7 +688,9 @@ class PontoTrackApp {
         this.currentRegistration.type === 'exit' ? '⬇️ Saída' :
           this.currentRegistration.type === 'lunch' ? '🍔 Almoço' :
             this.currentRegistration.type === 'lunch_end' ? '▶️ Retorno' :
-          this.currentRegistration.type === 'break' ? '☕ Pausa' : '▶️ Retorno'} registrada às ${record.time}`
+          this.currentRegistration.type === 'break' ? '☕ Pausa' : 
+          this.currentRegistration.type === 'extra_entry' ? '🛠️ Serviço Extra' :
+          this.currentRegistration.type === 'extra_exit' ? '🏁 Fim Extra' : '▶️ Retorno'} registrada às ${record.time}`
     );
   }
 
@@ -779,7 +824,9 @@ class PontoTrackApp {
         break_end: 'Retorno', 
         lunch: 'Almoço', 
         lunch_end: 'Ret. Almoço',
-        service: 'Serviço Externo'
+        service: 'Serviço Externo',
+        extra_entry: 'Serviço Extra',
+        extra_exit: 'Fim Serviço Extra'
       };
 
       const icons = {
@@ -787,7 +834,9 @@ class PontoTrackApp {
         exit: 'arrow-down',
         break: 'coffee',
         lunch: 'utensils',
-        service: 'truck-field'
+        service: 'truck-field',
+        extra_entry: 'tools',
+        extra_exit: 'stop-circle'
       };
       const icon = icons[r.type] || (r.type.includes('end') ? 'play' : 'fingerprint');
 
@@ -1421,14 +1470,14 @@ class PontoTrackApp {
     let entryTime = null;
 
     for (const r of sorted) {
-      if (r.type === 'entry') {
+      if (r.type === 'entry' || r.type === 'extra_entry') {
         entryTime = new Date(r.timestamp);
       } else if ((r.type === 'break' || r.type === 'lunch') && entryTime) {
         minutes += Math.max(0, Math.floor((new Date(r.timestamp) - entryTime) / 60000));
         entryTime = null;
       } else if (r.type === 'break_end' || r.type === 'lunch_end') {
         entryTime = new Date(r.timestamp);
-      } else if (r.type === 'exit' && entryTime) {
+      } else if ((r.type === 'exit' || r.type === 'extra_exit') && entryTime) {
         minutes += Math.max(0, Math.floor((new Date(r.timestamp) - entryTime) / 60000));
         entryTime = null;
       }
@@ -1493,7 +1542,8 @@ class PontoTrackApp {
 
     const typeLabels = { 
       entry: 'Entrada', exit: 'Saída', break: 'Pausa', break_end: 'Retorno', 
-      lunch: 'Almoço', lunch_end: 'Ret. Almoço', service: 'Serviço Externo' 
+      lunch: 'Almoço', lunch_end: 'Ret. Almoço', service: 'Serviço Externo',
+      extra_entry: 'Serviço Extra', extra_exit: 'Fim Serviço Extra'
     };
 
     let detailsHtml = `
