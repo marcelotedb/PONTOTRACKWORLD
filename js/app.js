@@ -60,6 +60,12 @@ class PontoTrackApp {
       // Init Sync
       await window.syncManager.init(firestore);
 
+      // Inicia o AdminEditManager e vincula ao app
+      if (window.adminEditManager) {
+        window.adminEditManager.app = this;
+        console.log('[App] AdminEditManager vinculado');
+      }
+
       // Check saved session
       const savedSession = localStorage.getItem('pontotrack_session');
       if (savedSession) {

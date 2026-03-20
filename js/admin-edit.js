@@ -13,20 +13,29 @@ class AdminEditManager {
     }
 
     async openEditModal(collection, id) {
+        console.log('[AdminEdit] Abrindo modal para', collection, id);
+        
         const item = await window.ptDB.get(collection, id);
-        if (!item) return;
+        if (!item) {
+            console.error('[AdminEdit] Item não encontrado:', collection, id);
+            return;
+        }
 
         // Fechar modal de detalhes
-        this.app.closeModal('detailsModal');
+        if (this.app) {
+            this.app.closeModal('detailsModal');
+        }
 
-        // Reutilizar o modal de registro ou criar um novo para edição?
-        // Vamos criar um modal simples de edição administrativa no index.html ou injetar via JS.
-        // Por simplicidade e robustez, vamos injetar um modal de edição caso não exista.
         this._ensureEditModal();
         
         const modal = document.getElementById('adminEditRecordModal');
         const form = document.getElementById('adminEditRecordForm');
         
+        if (!modal || !form) {
+            console.error('[AdminEdit] Modal ou formulário não encontrado no DOM');
+            return;
+        }
+
         // Preencher form
         form.dataset.collection = collection;
         form.dataset.id = id;
@@ -76,16 +85,18 @@ class AdminEditManager {
             };
 
             await window.syncManager.save(collection, id, updated, 'update');
-            this.app.showToast('Registro atualizado com sucesso!', 'success');
-            this.app.closeModal('adminEditRecordModal');
-            
-            // Callback para atualizar UI
-            if (this.app.onDataChange) {
-                this.app.onDataChange(collection);
+            if (this.app) {
+                this.app.showToast('Registro atualizado com sucesso!', 'success');
+                this.app.closeModal('adminEditRecordModal');
+                
+                // Callback para atualizar UI
+                if (this.app.onDataChange) {
+                    this.app.onDataChange(collection);
+                }
             }
         } catch (err) {
             console.error(err);
-            this.app.showToast('Erro ao atualizar registro', 'error');
+            if (this.app) this.app.showToast('Erro ao atualizar registro', 'error');
         }
     }
 
@@ -94,21 +105,28 @@ class AdminEditManager {
         
         try {
             await window.syncManager.remove(collection, id);
-            this.app.showToast('Registro excluído com sucesso', 'success');
-            this.app.closeModal('detailsModal');
-            
-            if (this.app.onDataChange) {
-                this.app.onDataChange(collection);
+            if (this.app) {
+                this.app.showToast('Registro excluído com sucesso', 'success');
+                this.app.closeModal('detailsModal');
+                
+                if (this.app.onDataChange) {
+                    this.app.onDataChange(collection);
+                }
             }
         } catch (err) {
             console.error(err);
-            this.app.showToast('Erro ao excluir registro', 'error');
+            if (this.app) this.app.showToast('Erro ao excluir registro', 'error');
         }
     }
 
     _ensureEditModal() {
-        if (document.getElementById('adminEditRecordModal')) return;
+        const existing = document.getElementById('adminEditRecordModal');
+        if (existing) {
+            console.log('[AdminEdit] Modal já existe no DOM');
+            return;
+        }
 
+        console.log('[AdminEdit] Injetando modal no DOM');
         const modalHtml = `
             <div class="modal" id="adminEditRecordModal">
                 <div class="modal-content" style="max-width:400px;">
