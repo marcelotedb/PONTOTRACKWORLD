@@ -1678,6 +1678,13 @@ class PontoTrackApp {
   requestTimeOff() { this.showToast('Funcionalidade em desenvolvimento', 'info'); }
   openSettings() { this.showToast('Funcionalidade em desenvolvimento', 'info'); }
   showForgotPassword() { this.showToast('Contate o administrador para redefinir sua senha', 'info'); }
+
+  _stopCamera() {
+    if (this.stream) {
+      this.stream.getTracks().forEach(track => track.stop());
+      this.stream = null;
+    }
+  }
 }
 
 // Initialize
