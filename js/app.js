@@ -497,6 +497,17 @@ class PontoTrackApp {
       const cfg = typeConfig[r.type] || typeConfig.entry;
       const syncIcon = r.syncStatus === 'synced' ? 'synced' : 'pending';
       const obsHtml = r.observation ? `<div style="font-size:11px;color:var(--text-tertiary);margin-top:4px;"><i class="fas fa-comment-dots"></i> ${r.observation}</div>` : '';
+      const isAdmin = this.currentUser?.type === 'admin';
+      const actionButtons = isAdmin ? `
+        <div class="record-actions" style="display:flex; gap:8px; margin-top:8px; border-top:1px solid var(--border); padding-top:8px;">
+          <button class="btn btn-sm btn-primary" style="flex:1; padding:5px; font-size:11px;" onclick="event.stopPropagation(); window.adminEditManager.openEditModal('records', '${r.id}')">
+            <i class="fas fa-edit"></i> Editar
+          </button>
+          <button class="btn btn-sm btn-danger" style="width:32px; padding:5px; font-size:11px;" onclick="event.stopPropagation(); window.adminEditManager.deleteRecord('records', '${r.id}')">
+            <i class="fas fa-trash-alt"></i>
+          </button>
+        </div>` : '';
+
       return `
         <div class="record-item" style="flex-wrap: wrap; cursor: pointer;" onclick="app.viewRecordDetails('records', '${r.id}')">
           <div style="display:flex; width: 100%; justify-content: space-between;">
@@ -515,6 +526,7 @@ class PontoTrackApp {
             </div>
           </div>
           ${obsHtml}
+          ${actionButtons}
         </div>`;
     }).join('');
   }
@@ -855,6 +867,14 @@ class PontoTrackApp {
               <p><strong>${typeLabels[r.type] || r.type}</strong> • ${r.time}</p>
               ${isService ? `<div style="font-size:11px; color:var(--text-secondary); margin: 4px 0;">${r.locationName} | ${r.description.substring(0, 40)}${r.description.length > 40 ? '...' : ''}</div>` : ''}
               <div class="record-location-small">${locText}</div>
+              <div class="record-actions" style="display:flex; gap:8px; margin-top:8px; border-top:1px solid var(--border); padding-top:8px;">
+                <button class="btn btn-sm btn-primary" style="flex:1; padding:5px; font-size:11px;" onclick="event.stopPropagation(); window.adminEditManager.openEditModal('${collection}', '${r.id}')">
+                  <i class="fas fa-edit"></i> Editar
+                </button>
+                <button class="btn btn-sm btn-danger" style="width:32px; padding:5px; font-size:11px;" onclick="event.stopPropagation(); window.adminEditManager.deleteRecord('${collection}', '${r.id}')">
+                  <i class="fas fa-trash-alt"></i>
+                </button>
+              </div>
             </div>
           </div>
           <div class="record-time">
@@ -1571,6 +1591,24 @@ class PontoTrackApp {
     }
 
     content.innerHTML = detailsHtml;
+
+    // Configurar botões Administrativos se for admin
+    const editBtn = document.getElementById('adminEditBtn');
+    const delBtn = document.getElementById('adminDeleteBtn');
+    
+    if (this.currentUser?.type === 'admin') {
+      if (editBtn) {
+        editBtn.style.display = 'flex';
+        editBtn.onclick = () => window.adminEditManager.openEditModal(collection, id);
+      }
+      if (delBtn) {
+        delBtn.style.display = 'flex';
+        delBtn.onclick = () => window.adminEditManager.deleteRecord(collection, id);
+      }
+    } else {
+      if (editBtn) editBtn.style.display = 'none';
+      if (delBtn) delBtn.style.display = 'none';
+    }
 
     // Inicializar mini mapa
     setTimeout(() => {

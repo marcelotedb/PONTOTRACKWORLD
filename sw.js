@@ -4,9 +4,9 @@
 //             Network First + Cache Fallback para API/dados
 // ============================================================
 
-const CACHE_NAME = 'pontotrack-v3.0';
-const STATIC_CACHE = 'pontotrack-static-v3.0';
-const DYNAMIC_CACHE = 'pontotrack-dynamic-v3.0';
+const CACHE_NAME = 'pontotrack-v3.1';
+const STATIC_CACHE = 'pontotrack-static-v3.1';
+const DYNAMIC_CACHE = 'pontotrack-dynamic-v3.1';
 
 // Assets que devem ser cacheados na instalação
 const STATIC_ASSETS = [
@@ -20,6 +20,7 @@ const STATIC_ASSETS = [
   'js/sync.js',
   'js/i18n.js',
   'js/notifications.js',
+  'js/admin-edit.js',
   'manifest.json',
   'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap',
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css',
@@ -31,7 +32,7 @@ const STATIC_ASSETS = [
 
 // Instalar Service Worker
 self.addEventListener('install', event => {
-  console.log('[SW] Instalando Service Worker v3.0...');
+  console.log('[SW] Instalando Service Worker v3.1...');
   event.waitUntil(
     caches.open(STATIC_CACHE)
       .then(cache => {
@@ -50,7 +51,7 @@ self.addEventListener('install', event => {
 
 // Ativar Service Worker
 self.addEventListener('activate', event => {
-  console.log('[SW] Ativando Service Worker v3.0...');
+  console.log('[SW] Ativando Service Worker v3.1...');
   event.waitUntil(
     caches.keys().then(cacheNames => {
       return Promise.all(
