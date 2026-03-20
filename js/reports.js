@@ -293,9 +293,9 @@ class ReportsManager {
       emp.processedDays.forEach((d, idx) => {
         const bg = idx % 2 === 0 ? "FFFFFF" : "F1F5F9";
         const cSt = { font: { sz: 10, color: { rgb: "1E293B" } }, fill: { fgColor: { rgb: bg } }, alignment: { horizontal: "center" }, border: brd };
-        const tmSt = { font: { sz: 10, color: { rgb: "1E293B" } }, fill: { fgColor: { rgb: bg } }, alignment: { horizontal: "center" }, border: brd, z: 'h:mm' };
-        const drSt = { font: { sz: 10, color: { rgb: "1E293B" } }, fill: { fgColor: { rgb: bg } }, alignment: { horizontal: "center" }, border: brd, z: '[h]:mm' };
-        const mSt = { font: { sz: 10, color: { rgb: "1E293B" } }, fill: { fgColor: { rgb: bg } }, alignment: { horizontal: "right" }, border: brd, z: 'R$ #,##0.00' };
+        const tmSt = { font: { sz: 10, color: { rgb: "1E293B" } }, fill: { fgColor: { rgb: bg } }, alignment: { horizontal: "center" }, border: brd, numFmt: 'h:mm' };
+        const drSt = { font: { sz: 10, color: { rgb: "1E293B" } }, fill: { fgColor: { rgb: bg } }, alignment: { horizontal: "center" }, border: brd, numFmt: '[h]:mm' };
+        const mSt = { font: { sz: 10, color: { rgb: "1E293B" } }, fill: { fgColor: { rgb: bg } }, alignment: { horizontal: "right" }, border: brd, numFmt: 'R$ #,##0.00' };
         const nSt = { font: { sz: 9, color: { rgb: "64748B" } }, fill: { fgColor: { rgb: bg } }, alignment: { horizontal: "left", wrapText: true }, border: brd };
 
         const dateObj = this._parseDate(d.date);
@@ -361,9 +361,9 @@ class ReportsManager {
 
       // ── RESUMO COM FÓRMULAS ──
       const sLbl = { font: { bold: true, sz: 11, color: { rgb: "FFFFFF" } }, fill: { fgColor: { rgb: "0F172A" } }, alignment: { horizontal: "right" }, border: brd };
-      const sTm = { font: { bold: true, sz: 12, color: { rgb: "FFFFFF" } }, fill: { fgColor: { rgb: "1E40AF" } }, alignment: { horizontal: "center" }, border: brd, z: '[h]:mm' };
+      const sTm = { font: { bold: true, sz: 12, color: { rgb: "FFFFFF" } }, fill: { fgColor: { rgb: "1E40AF" } }, alignment: { horizontal: "center" }, border: brd, numFmt: '[h]:mm' };
       const sCnt = { font: { bold: true, sz: 12, color: { rgb: "FFFFFF" } }, fill: { fgColor: { rgb: "1E40AF" } }, alignment: { horizontal: "center" }, border: brd };
-      const sMon = { font: { bold: true, sz: 12, color: { rgb: "FFFFFF" } }, fill: { fgColor: { rgb: "15803D" } }, alignment: { horizontal: "center" }, border: brd, z: 'R$ #,##0.00' };
+      const sMon = { font: { bold: true, sz: 12, color: { rgb: "FFFFFF" } }, fill: { fgColor: { rgb: "15803D" } }, alignment: { horizontal: "center" }, border: brd, numFmt: 'R$ #,##0.00' };
 
       // Titulo
       ws[XLSX.utils.encode_cell({ r: row, c: 0 })] = { v: "RESUMO DO PERÍODO", t: 's', s: { font: { bold: true, sz: 13, color: { rgb: "FFFFFF" } }, fill: { fgColor: { rgb: "0F172A" } }, alignment: { horizontal: "center" } } };
