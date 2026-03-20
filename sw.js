@@ -4,9 +4,9 @@
 //             Network First + Cache Fallback para API/dados
 // ============================================================
 
-const CACHE_NAME = 'pontotrack-v3.1';
-const STATIC_CACHE = 'pontotrack-static-v3.1';
-const DYNAMIC_CACHE = 'pontotrack-dynamic-v3.1';
+const CACHE_NAME = 'pontotrack-v3.2';
+const STATIC_CACHE = 'pontotrack-static-v3.2';
+const DYNAMIC_CACHE = 'pontotrack-dynamic-v3.2';
 
 // Assets que devem ser cacheados na instalação
 const STATIC_ASSETS = [
@@ -27,7 +27,7 @@ const STATIC_ASSETS = [
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
   'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
+  'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js'
 ];
 
 // Instalar Service Worker

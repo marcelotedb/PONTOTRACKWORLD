@@ -265,33 +265,235 @@ class ReportsManager {
     const wb = XLSX.utils.book_new();
 
     Object.values(summary).forEach(emp => {
-      const rows = emp.processedDays.map(d => ({
-        'Data': d.date,
-        'Dia da Semana': d.dayOfWeek,
-        'Entrada': d.entry,
-        'Almoço Saída': d.lunchOut,
-        'Almoço Retorno': d.lunchIn,
-        'Saída': d.exit,
-        'Horas Trabalhadas': this._formatMinutes(d.worked),
-        'Horas Extras': this._formatMinutes(d.overtime),
-        'Valor Ext (R$)': d.overtimeValue > 0 ? `R$ ${d.overtimeValue.toFixed(2)}` : 'R$ 0.00',
-        'Observações': d.notes
-      }));
+      // ===== CONSTRUÇÃO DA PLANILHA PROFISSIONAL =====
+      const ws = {};
+      const merge = [];
+      const colWidths = [
+        { wch: 14 },  // A - Data
+        { wch: 14 },  // B - Dia da Semana
+        { wch: 10 },  // C - Entrada
+        { wch: 12 },  // D - Saída Almoço
+        { wch: 12 },  // E - Retorno Almoço
+        { wch: 10 },  // F - Saída
+        { wch: 10 },  // G - Jornada Esperada (h)
+        { wch: 14 },  // H - Horas Trabalhadas (h)
+        { wch: 12 },  // I - Horas Extras (h)
+        { wch: 10 },  // J - Saldo (h)
+        { wch: 14 },  // K - Valor Extra (R$)
+        { wch: 30 },  // L - Observações
+      ];
 
-      // Add summary rows at the end
-      rows.push({});
-      rows.push({ 'Data': 'RESUMO DO PERÍODO' });
-      rows.push({ 'Data': 'Dias Trabalhados', 'Dia da Semana': emp.daysWorked });
-      rows.push({ 'Data': 'Total Horas', 'Dia da Semana': this._formatMinutes(emp.totalWorked) });
-      rows.push({ 'Data': 'Total Extras', 'Dia da Semana': this._formatMinutes(emp.totalOvertime) });
-      rows.push({ 'Data': 'Total Valor Extra', 'Dia da Semana': `R$ ${emp.totalOvertimeValue.toFixed(2)}` });
-      rows.push({ 'Data': 'Média Diária', 'Dia da Semana': this._formatMinutes(emp.daysWorked ? Math.round(emp.totalWorked / emp.daysWorked) : 0) });
+      const salary = parseFloat(emp.info?.salary) || 1412.00;
+      const empName = (emp.info?.name || '').toLowerCase();
+      const isSpecialEmp = empName.includes('raimundo') || empName.includes('joao adelmo') || empName.includes('joão adelmo');
 
-      const ws = XLSX.utils.json_to_sheet(rows);
+      let row = 0; // 0-indexed
+
+      // --- CABEÇALHO DA EMPRESA ---
+      const headerStyle = { font: { bold: true, sz: 16, color: { rgb: "FFFFFF" } }, fill: { fgColor: { rgb: "0F172A" } }, alignment: { horizontal: "center", vertical: "center" } };
+      const subHeaderStyle = { font: { bold: true, sz: 11, color: { rgb: "CBD5E1" } }, fill: { fgColor: { rgb: "0F172A" } }, alignment: { horizontal: "center", vertical: "center" } };
+
+      ws[XLSX.utils.encode_cell({ r: row, c: 0 })] = { v: "PONTOTRACK - CARTÃO DE PONTO", t: 's', s: headerStyle };
+      merge.push({ s: { r: row, c: 0 }, e: { r: row, c: 11 } });
+      row++;
+
+      ws[XLSX.utils.encode_cell({ r: row, c: 0 })] = { v: "Sistema de Controle de Ponto Eletrônico", t: 's', s: subHeaderStyle };
+      merge.push({ s: { r: row, c: 0 }, e: { r: row, c: 11 } });
+      row++;
+      row++; // linha vazia
+
+      // --- DADOS DO FUNCIONÁRIO ---
+      const labelStyle = { font: { bold: true, sz: 11, color: { rgb: "334155" } }, fill: { fgColor: { rgb: "F1F5F9" } }, alignment: { horizontal: "left" }, border: this._getBorder() };
+      const valueStyle = { font: { sz: 11, color: { rgb: "0F172A" } }, fill: { fgColor: { rgb: "F8FAFC" } }, alignment: { horizontal: "left" }, border: this._getBorder() };
+
+      const infoRows = [
+        ['Funcionário:', emp.info.name, 'ID / Matrícula:', emp.info.id],
+        ['Cargo:', emp.info.role || 'Não informado', 'Departamento:', emp.info.dept || 'Operacional'],
+        ['Salário Base:', `R$ ${salary.toFixed(2)}`, 'Valor Hora (base):', `R$ ${(salary / 220).toFixed(2)}`],
+      ];
+
+      infoRows.forEach(infoRow => {
+        ws[XLSX.utils.encode_cell({ r: row, c: 0 })] = { v: infoRow[0], t: 's', s: labelStyle };
+        ws[XLSX.utils.encode_cell({ r: row, c: 1 })] = { v: infoRow[1], t: 's', s: valueStyle };
+        merge.push({ s: { r: row, c: 1 }, e: { r: row, c: 4 } });
+        ws[XLSX.utils.encode_cell({ r: row, c: 5 })] = { v: infoRow[2], t: 's', s: labelStyle };
+        ws[XLSX.utils.encode_cell({ r: row, c: 6 })] = { v: infoRow[3], t: 's', s: valueStyle };
+        merge.push({ s: { r: row, c: 6 }, e: { r: row, c: 8 } });
+        row++;
+      });
+
+      row++; // linha vazia
+
+      // --- CABEÇALHO DA TABELA DE REGISTROS ---
+      const thStyle = { font: { bold: true, sz: 11, color: { rgb: "FFFFFF" } }, fill: { fgColor: { rgb: "1E40AF" } }, alignment: { horizontal: "center", vertical: "center", wrapText: true }, border: this._getBorder() };
+      const headers = ['Data', 'Dia', 'Entrada', 'Saída Almoço', 'Ret. Almoço', 'Saída', 'Jornada Esperada (h)', 'Horas Trab. (h)', 'Horas Extras (h)', 'Saldo (h)', 'Valor Extra (R$)', 'Observações'];
+      const headerRow = row;
+
+      headers.forEach((h, c) => {
+        ws[XLSX.utils.encode_cell({ r: row, c })] = { v: h, t: 's', s: thStyle };
+      });
+      row++;
+
+      // --- DADOS DIÁRIOS ---
+      const dataStartRow = row; // para fórmulas depois (1-indexed no Excel = row + 1)
+
+      emp.processedDays.forEach((d, idx) => {
+        const isEven = idx % 2 === 0;
+        const bgColor = isEven ? "FFFFFF" : "F1F5F9";
+        const cellStyle = { font: { sz: 10, color: { rgb: "1E293B" } }, fill: { fgColor: { rgb: bgColor } }, alignment: { horizontal: "center" }, border: this._getBorder() };
+        const numStyle = { ...cellStyle, z: '0.00' };
+        const moneyStyle = { font: { sz: 10, color: { rgb: "1E293B" } }, fill: { fgColor: { rgb: bgColor } }, alignment: { horizontal: "right" }, border: this._getBorder(), z: '#,##0.00' };
+        const noteStyle = { font: { sz: 9, color: { rgb: "64748B" } }, fill: { fgColor: { rgb: bgColor } }, alignment: { horizontal: "left", wrapText: true }, border: this._getBorder() };
+
+        // Calcular jornada esperada do dia
+        const dateObj = this._parseDate(d.date);
+        const dayIndex = dateObj.getDay();
+        let expectedHours = 8;
+        if (isSpecialEmp) {
+          if (dayIndex === 0 || dayIndex === 6) expectedHours = 0;
+        } else {
+          if (dayIndex === 0) expectedHours = 0;
+          else if (dayIndex === 6) expectedHours = 4;
+        }
+
+        const workedHours = d.worked / 60;
+        const overtimeHours = d.overtime / 60;
+        const balanceHours = d.netOvertime / 60;
+
+        // A=Data, B=Dia, C=Entrada, D=SaidaAlmoco, E=RetAlmoco, F=Saida
+        ws[XLSX.utils.encode_cell({ r: row, c: 0 })] = { v: d.date, t: 's', s: cellStyle };
+        ws[XLSX.utils.encode_cell({ r: row, c: 1 })] = { v: d.dayOfWeek, t: 's', s: cellStyle };
+        ws[XLSX.utils.encode_cell({ r: row, c: 2 })] = { v: d.entry, t: 's', s: cellStyle };
+        ws[XLSX.utils.encode_cell({ r: row, c: 3 })] = { v: d.lunchOut, t: 's', s: cellStyle };
+        ws[XLSX.utils.encode_cell({ r: row, c: 4 })] = { v: d.lunchIn, t: 's', s: cellStyle };
+        ws[XLSX.utils.encode_cell({ r: row, c: 5 })] = { v: d.exit, t: 's', s: cellStyle };
+
+        // G=Jornada Esperada (número decimal para editar)
+        ws[XLSX.utils.encode_cell({ r: row, c: 6 })] = { v: expectedHours, t: 'n', s: numStyle };
+
+        // H=Horas Trabalhadas (número decimal para editar)
+        ws[XLSX.utils.encode_cell({ r: row, c: 7 })] = { v: Math.round(workedHours * 100) / 100, t: 'n', s: numStyle };
+
+        // I=Horas Extras: FÓRMULA =SE(H-G>0, H-G, 0)
+        const excelRow = row + 1; // Excel é 1-indexed
+        ws[XLSX.utils.encode_cell({ r: row, c: 8 })] = { f: `IF(H${excelRow}-G${excelRow}>0,H${excelRow}-G${excelRow},0)`, t: 'n', s: numStyle };
+
+        // J=Saldo: FÓRMULA =H-G
+        ws[XLSX.utils.encode_cell({ r: row, c: 9 })] = { f: `H${excelRow}-G${excelRow}`, t: 'n', s: numStyle };
+
+        // K=Valor Extra: FÓRMULA =I*ValorHora*Multiplicador
+        const multiplier = (dayIndex === 0) ? 2.0 : 1.5;
+        const hourlyRate = isSpecialEmp ? 50.00 : (salary / 220);
+        ws[XLSX.utils.encode_cell({ r: row, c: 10 })] = { f: `I${excelRow}*${(hourlyRate * multiplier).toFixed(2)}`, t: 'n', s: moneyStyle };
+
+        // L=Observações
+        ws[XLSX.utils.encode_cell({ r: row, c: 11 })] = { v: d.notes || '', t: 's', s: noteStyle };
+
+        row++;
+      });
+
+      const dataEndRow = row; // exclusivo (última linha de dados + 1)
+      const lastDataExcelRow = row; // última linha de dados em Excel (1-indexed)
+      const firstDataExcelRow = dataStartRow + 1;
+
+      row++; // linha vazia separadora
+
+      // --- RESUMO / TOTALIZADORES COM FÓRMULAS ---
+      const summaryLabelStyle = { font: { bold: true, sz: 11, color: { rgb: "FFFFFF" } }, fill: { fgColor: { rgb: "0F172A" } }, alignment: { horizontal: "right" }, border: this._getBorder() };
+      const summaryValueStyle = { font: { bold: true, sz: 12, color: { rgb: "FFFFFF" } }, fill: { fgColor: { rgb: "1E40AF" } }, alignment: { horizontal: "center" }, border: this._getBorder(), z: '0.00' };
+      const summaryMoneyStyle = { font: { bold: true, sz: 12, color: { rgb: "FFFFFF" } }, fill: { fgColor: { rgb: "15803D" } }, alignment: { horizontal: "center" }, border: this._getBorder(), z: '#,##0.00' };
+
+      // Linha de TOTAL
+      ws[XLSX.utils.encode_cell({ r: row, c: 0 })] = { v: "RESUMO DO PERÍODO", t: 's', s: { font: { bold: true, sz: 13, color: { rgb: "FFFFFF" } }, fill: { fgColor: { rgb: "0F172A" } }, alignment: { horizontal: "center" } } };
+      merge.push({ s: { r: row, c: 0 }, e: { r: row, c: 11 } });
+      row++;
+
+      // Dias Trabalhados
+      ws[XLSX.utils.encode_cell({ r: row, c: 0 })] = { v: "Dias Trabalhados:", t: 's', s: summaryLabelStyle };
+      merge.push({ s: { r: row, c: 0 }, e: { r: row, c: 5 } });
+      ws[XLSX.utils.encode_cell({ r: row, c: 6 })] = { f: `COUNTA(A${firstDataExcelRow}:A${lastDataExcelRow})`, t: 'n', s: summaryValueStyle };
+      merge.push({ s: { r: row, c: 6 }, e: { r: row, c: 8 } });
+      row++;
+
+      // Total Jornada Esperada
+      ws[XLSX.utils.encode_cell({ r: row, c: 0 })] = { v: "Total Jornada Esperada (h):", t: 's', s: summaryLabelStyle };
+      merge.push({ s: { r: row, c: 0 }, e: { r: row, c: 5 } });
+      ws[XLSX.utils.encode_cell({ r: row, c: 6 })] = { f: `SUM(G${firstDataExcelRow}:G${lastDataExcelRow})`, t: 'n', s: summaryValueStyle };
+      merge.push({ s: { r: row, c: 6 }, e: { r: row, c: 8 } });
+      row++;
+
+      // Total Horas Trabalhadas
+      ws[XLSX.utils.encode_cell({ r: row, c: 0 })] = { v: "Total Horas Trabalhadas (h):", t: 's', s: summaryLabelStyle };
+      merge.push({ s: { r: row, c: 0 }, e: { r: row, c: 5 } });
+      ws[XLSX.utils.encode_cell({ r: row, c: 6 })] = { f: `SUM(H${firstDataExcelRow}:H${lastDataExcelRow})`, t: 'n', s: summaryValueStyle };
+      merge.push({ s: { r: row, c: 6 }, e: { r: row, c: 8 } });
+      row++;
+
+      // Total Horas Extras
+      ws[XLSX.utils.encode_cell({ r: row, c: 0 })] = { v: "Total Horas Extras (h):", t: 's', s: summaryLabelStyle };
+      merge.push({ s: { r: row, c: 0 }, e: { r: row, c: 5 } });
+      ws[XLSX.utils.encode_cell({ r: row, c: 6 })] = { f: `SUM(I${firstDataExcelRow}:I${lastDataExcelRow})`, t: 'n', s: summaryValueStyle };
+      merge.push({ s: { r: row, c: 6 }, e: { r: row, c: 8 } });
+      row++;
+
+      // Saldo Total (Banco de Horas)
+      ws[XLSX.utils.encode_cell({ r: row, c: 0 })] = { v: "Saldo Total / Banco de Horas (h):", t: 's', s: summaryLabelStyle };
+      merge.push({ s: { r: row, c: 0 }, e: { r: row, c: 5 } });
+      ws[XLSX.utils.encode_cell({ r: row, c: 6 })] = { f: `SUM(J${firstDataExcelRow}:J${lastDataExcelRow})`, t: 'n', s: summaryValueStyle };
+      merge.push({ s: { r: row, c: 6 }, e: { r: row, c: 8 } });
+      row++;
+
+      // Valor Total Extras
+      ws[XLSX.utils.encode_cell({ r: row, c: 0 })] = { v: "Valor Total Horas Extras (R$):", t: 's', s: summaryLabelStyle };
+      merge.push({ s: { r: row, c: 0 }, e: { r: row, c: 5 } });
+      ws[XLSX.utils.encode_cell({ r: row, c: 6 })] = { f: `SUM(K${firstDataExcelRow}:K${lastDataExcelRow})`, t: 'n', s: summaryMoneyStyle };
+      merge.push({ s: { r: row, c: 6 }, e: { r: row, c: 8 } });
+      row++;
+
+      // Média Diária
+      ws[XLSX.utils.encode_cell({ r: row, c: 0 })] = { v: "Média Horas por Dia (h):", t: 's', s: summaryLabelStyle };
+      merge.push({ s: { r: row, c: 0 }, e: { r: row, c: 5 } });
+      ws[XLSX.utils.encode_cell({ r: row, c: 6 })] = { f: `IFERROR(SUM(H${firstDataExcelRow}:H${lastDataExcelRow})/COUNTA(A${firstDataExcelRow}:A${lastDataExcelRow}),0)`, t: 'n', s: summaryValueStyle };
+      merge.push({ s: { r: row, c: 6 }, e: { r: row, c: 8 } });
+      row++;
+
+      row++; // espaço
+
+      // --- LEGENDA ---
+      const legendStyle = { font: { italic: true, sz: 9, color: { rgb: "94A3B8" } } };
+      ws[XLSX.utils.encode_cell({ r: row, c: 0 })] = { v: "📋 Legenda:", t: 's', s: { font: { bold: true, sz: 9, color: { rgb: "64748B" } } } };
+      row++;
+      ws[XLSX.utils.encode_cell({ r: row, c: 0 })] = { v: "• Horas em formato decimal (ex: 8.50 = 8h30min). Você pode editar qualquer célula de hora.", t: 's', s: legendStyle };
+      merge.push({ s: { r: row, c: 0 }, e: { r: row, c: 11 } });
+      row++;
+      ws[XLSX.utils.encode_cell({ r: row, c: 0 })] = { v: "• Colunas I (Extras), J (Saldo) e K (Valor) são fórmulas automáticas baseadas nas colunas G e H.", t: 's', s: legendStyle };
+      merge.push({ s: { r: row, c: 0 }, e: { r: row, c: 11 } });
+      row++;
+      ws[XLSX.utils.encode_cell({ r: row, c: 0 })] = { v: "• Ao alterar a Jornada Esperada (G) ou Horas Trabalhadas (H), os cálculos se atualizam automaticamente.", t: 's', s: legendStyle };
+      merge.push({ s: { r: row, c: 0 }, e: { r: row, c: 11 } });
+      row++;
+      ws[XLSX.utils.encode_cell({ r: row, c: 0 })] = { v: `• Gerado por PontoTrack em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}`, t: 's', s: legendStyle };
+      merge.push({ s: { r: row, c: 0 }, e: { r: row, c: 11 } });
+
+      // --- PROPRIEDADES DA PLANILHA ---
+      ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: row, c: 11 } });
+      ws['!cols'] = colWidths;
+      ws['!merges'] = merge;
+
+      // Congelar painel: cabeçalho da tabela fixo ao rolar
+      ws['!freeze'] = { xSplit: 0, ySplit: headerRow + 1 };
+
       XLSX.utils.book_append_sheet(wb, ws, emp.info.name.substring(0, 30));
     });
 
-    XLSX.writeFile(wb, `pontotrack_relatorio_${Date.now()}.xlsx`);
+    // Gerar arquivo com data legível no nome
+    const dateStr = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
+    XLSX.writeFile(wb, `PontoTrack_Relatorio_${dateStr}.xlsx`);
+  }
+
+  _getBorder() {
+    const thin = { style: 'thin', color: { rgb: 'CBD5E1' } };
+    return { top: thin, bottom: thin, left: thin, right: thin };
   }
 
   _exportPDF(records, employees) {
