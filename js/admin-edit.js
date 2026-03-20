@@ -33,10 +33,16 @@ class AdminEditManager {
         
         document.getElementById('editRegType').value = item.type || 'entry';
         
-        // Converter timestamp para input date e time
+        // Converter timestamp para local data e time (evitando problemas de fuso horário ISO)
         const ts = new Date(item.timestamp);
-        document.getElementById('editRegDate').value = ts.toISOString().split('T')[0];
-        document.getElementById('editRegTime').value = ts.toTimeString().slice(0, 5);
+        const year = ts.getFullYear();
+        const month = String(ts.getMonth() + 1).padStart(2, '0');
+        const day = String(ts.getDate()).padStart(2, '0');
+        const hours = String(ts.getHours()).padStart(2, '0');
+        const minutes = String(ts.getMinutes()).padStart(2, '0');
+        
+        document.getElementById('editRegDate').value = `${year}-${month}-${day}`;
+        document.getElementById('editRegTime').value = `${hours}:${minutes}`;
         document.getElementById('editRegObs').value = item.observation || '';
         
         modal.classList.add('active');
