@@ -99,9 +99,12 @@ class PontoTrackApp {
 
     // Start clock
     this._startClock();
+    
+    // Start Notification Reminders
+    this._startReminders();
 
-      // Request notification permission
-      window.notifManager?.requestPermission();
+    // Permissions
+    window.notifManager?.requestPermission();
 
     } catch (error) {
       console.error('[App] Erro fatal na inicialização:', error);
@@ -450,6 +453,59 @@ class PontoTrackApp {
     }
   }
 
+  _startReminders() {
+    if (this.reminderInterval) clearInterval(this.reminderInterval);
+    
+    // Verify every minute
+    this.reminderInterval = setInterval(async () => {
+      if (!this.currentUser || this.currentUser.type !== 'employee') return;
+      if (this.settings.notifications === 'none') return;
+      
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      
+      // Obter configuração de tempo para não repetir a mesma notificação dentro do mesmo minuto
+      if (this.lastReminderSent === timeStr) return;
+      
+      const isStart = timeStr === this.settings.startTime;
+      const isEnd = timeStr === this.settings.endTime;
+      
+      if (isStart || isEnd) {
+        this.lastReminderSent = timeStr;
+        
+        // Verifica se os registros do dia corrente já contemplam isso (para não enviar lembrete se já tiver batido ponto)
+        const today = now.toLocaleDateString('pt-BR');
+        const records = await window.ptDB.getRecordsByEmployee(this.currentUser.id);
+        const todayRecords = records.filter(r => r.date === today);
+        
+        let shouldRemind = false;
+        if (isStart && !todayRecords.some(r => r.type === 'entry')) {
+           shouldRemind = true;
+        } else if (isEnd && !todayRecords.some(r => r.type === 'exit')) {
+           shouldRemind = true;
+        }
+
+        if (shouldRemind && window.notifManager) {
+          window.notifManager.send(
+            'Lembrete de Ponto - PontoTrack', 
+            `Atenção! Está na hora do seu ponto de ${isStart ? 'Entrada' : 'Saída'} (${timeStr}). Por favor, registre.`,
+            'info'
+          );
+          
+          // Audio feedback if supported
+          try {
+            if (window.notifManager.alertAudio) {
+               window.notifManager.alertAudio.play().catch(e => console.warn(e));
+            } else {
+               const audio = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
+               audio.play().catch(e => console.warn(e));
+            }
+          } catch(e) {}
+        }
+      }
+    }, 60000); // 1 minuto
+  }
+
 
   async _updateEmployeeStats() {
     const t = new Date().toLocaleDateString('pt-BR');
@@ -642,6 +698,11 @@ class PontoTrackApp {
   }
 
   async confirmRegistration() {
+    const btnConfirm = document.querySelector('#registrationModal .btn-primary');
+    if (this.isSavingRegistration) return; // Prevent double clicks
+    this.isSavingRegistration = true;
+    if (btnConfirm) btnConfirm.disabled = true;
+
     const locEl = document.getElementById('locationInfo');
     const now = new Date();
     const today = now.toLocaleDateString('pt-BR');
@@ -710,9 +771,13 @@ class PontoTrackApp {
           this.currentRegistration.type === 'extra_entry' ? '🛠️ Serviço Extra' :
           this.currentRegistration.type === 'extra_exit' ? '🏁 Fim Extra' : '▶️ Retorno'} registrada às ${record.time}`
     );
+    
+    this.isSavingRegistration = false;
+    if (btnConfirm) btnConfirm.disabled = false;
   }
 
   closeRegistrationModal() {
+    this.isSavingRegistration = false;
     document.getElementById('registrationModal').classList.remove('active');
     this._stopCamera();
   }
@@ -1363,8 +1428,11 @@ class PontoTrackApp {
 
   async saveServiceRecord(e) {
     e.preventDefault();
+    if (this.isSavingService) return;
+    this.isSavingService = true;
+    
     const btn = e.target.querySelector('button[type="submit"]');
-    btn.disabled = true;
+    if (btn) btn.disabled = true;
 
     try {
       const description = document.getElementById('svcDescription').value;
@@ -1396,6 +1464,7 @@ class PontoTrackApp {
       this.showToast('Erro ao salvar: ' + err.message, 'error');
     } finally {
       btn.disabled = false;
+      this.isSavingService = false;
     }
   }
 

@@ -206,10 +206,15 @@ class SyncManager {
           cleanData.photoSaved = true;
           delete cleanData.photo;
         }
-        await this.firestore.collection(collection).doc(id).set(cleanData, { merge: true });
+        
+        // Timeout de 5s para evitar travamento em redes lentas
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000));
+        const fbPromise = this.firestore.collection(collection).doc(id).set(cleanData, { merge: true });
+        
+        await Promise.race([fbPromise, timeoutPromise]);
         return true;
       } catch (error) {
-        console.error(`[Sync] Falha ao salvar no Firebase, adicionando à fila:`, error);
+        console.warn(`[Sync] Timeout ou erro ao salvar no Firebase, adicionando à fila offline...`);
         const queueData = { ...data };
         if (queueData.photo) delete queueData.photo; // Don't queue photos
         await window.ptDB.addToSyncQueue(collection, id, action, queueData);
@@ -229,7 +234,9 @@ class SyncManager {
     
     if (this.firebaseReady && this.isOnline) {
       try {
-        await this.firestore.collection(collection).doc(id).delete();
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000));
+        const fbPromise = this.firestore.collection(collection).doc(id).delete();
+        await Promise.race([fbPromise, timeoutPromise]);
       } catch {
         await window.ptDB.addToSyncQueue(collection, id, 'delete', null);
       }
