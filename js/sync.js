@@ -137,6 +137,28 @@ class SyncManager {
     
     this.isSyncing = true;
     try {
+      // PROCESSO DE RESGATE: Encontrar registros locais 'pending' que caíram fora da fila de sync
+      try {
+        const collectionsToRescue = ['records', 'servicos_campo'];
+        const currentQueue = await window.ptDB.getSyncQueue();
+        
+        for (const col of collectionsToRescue) {
+          const allLocal = await window.ptDB.getAll(col);
+          const pending = allLocal.filter(r => r.syncStatus === 'pending');
+          
+          for (const pr of pending) {
+             if (!currentQueue.find(q => q.collection === col && q.docId === pr.id)) {
+               console.warn(`[Sync] Resgatando registro órfão na coleção ${col}: ${pr.id}`);
+               const qData = { ...pr };
+               if (qData.photo) delete qData.photo;
+               await window.ptDB.addToSyncQueue(col, pr.id, 'create', qData);
+             }
+          }
+        }
+      } catch (e) {
+        // Ignora erros na etapa de resgate
+      }
+
       const queue = await window.ptDB.getSyncQueue();
       let synced = 0;
       
@@ -156,11 +178,11 @@ class SyncManager {
           synced++;
           
           // Update record sync status
-          if (item.collection === 'records' && item.action !== 'delete') {
-            const record = await window.ptDB.get('records', item.docId);
+          if ((item.collection === 'records' || item.collection === 'servicos_campo') && item.action !== 'delete') {
+            const record = await window.ptDB.get(item.collection, item.docId);
             if (record) {
               record.syncStatus = 'synced';
-              await window.ptDB.put('records', record);
+              await window.ptDB.put(item.collection, record);
             }
           }
         } catch (error) {
@@ -194,10 +216,17 @@ class SyncManager {
 
   // Save with automatic sync queue
   async save(collection, id, data, action = 'update') {
-    // Always save locally first
-    await window.ptDB.put(collection, data);
+    // 1. Prepare queue data
+    const queueData = { ...data };
+    if (queueData.photo) delete queueData.photo;
     
-    // Try to save to Firebase
+    // 2. Always save locally AND to syncQueue IMMEDIATELY to prevent orphans if app closes
+    await Promise.all([
+      window.ptDB.put(collection, data),
+      window.ptDB.addToSyncQueue(collection, id, action, queueData)
+    ]);
+    
+    // 3. Try to save to Firebase
     if (this.firebaseReady && this.isOnline) {
       try {
         const cleanData = { ...data };
@@ -212,19 +241,26 @@ class SyncManager {
         const fbPromise = this.firestore.collection(collection).doc(id).set(cleanData, { merge: true });
         
         await Promise.race([fbPromise, timeoutPromise]);
+        
+        // Se sucesso imediato, remove da fila recém-criada
+        const currentQ = await window.ptDB.getSyncQueue();
+        const queuedItem = currentQ.find(q => q.collection === collection && q.docId === id);
+        if (queuedItem) await window.ptDB.removeSyncItem(queuedItem.id);
+        
+        // Atualiza status local
+        if (collection === 'records' || collection === 'servicos_campo') {
+           const rec = await window.ptDB.get(collection, id);
+           if (rec) {
+             rec.syncStatus = 'synced';
+             await window.ptDB.put(collection, rec);
+           }
+        }
         return true;
       } catch (error) {
-        console.warn(`[Sync] Timeout ou erro ao salvar no Firebase, adicionando à fila offline...`);
-        const queueData = { ...data };
-        if (queueData.photo) delete queueData.photo; // Don't queue photos
-        await window.ptDB.addToSyncQueue(collection, id, action, queueData);
+        console.warn(`[Sync] Timeout ou erro ao salvar no Firebase, registro permanecerá na fila offline...`);
         return false;
       }
     } else {
-      // Add to sync queue
-      const queueData = { ...data };
-      if (queueData.photo) delete queueData.photo;
-      await window.ptDB.addToSyncQueue(collection, id, action, queueData);
       return false;
     }
   }

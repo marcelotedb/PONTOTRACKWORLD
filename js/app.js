@@ -1453,6 +1453,7 @@ class PontoTrackApp {
         timestamp: new Date(`${date}T${time}`).toISOString(),
         lat: lat ? parseFloat(lat) : null,
         lng: lng ? parseFloat(lng) : null,
+        syncStatus: navigator.onLine ? 'synced' : 'pending',
         createdAt: new Date().toISOString()
       };
 
