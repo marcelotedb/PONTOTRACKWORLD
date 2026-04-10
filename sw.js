@@ -4,9 +4,9 @@
 //             Network First + Cache Fallback para API/dados
 // ============================================================
 
-const CACHE_NAME = 'pontotrack-v3.8';
-const STATIC_CACHE = 'pontotrack-static-v3.8';
-const DYNAMIC_CACHE = 'pontotrack-dynamic-v3.8';
+const CACHE_NAME = 'pontotrack-v4.0';
+const STATIC_CACHE = 'pontotrack-static-v4.0';
+const DYNAMIC_CACHE = 'pontotrack-dynamic-v4.0';
 
 // Assets que devem ser cacheados na instalação
 const STATIC_ASSETS = [
