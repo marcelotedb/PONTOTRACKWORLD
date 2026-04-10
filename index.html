@@ -421,10 +421,13 @@
                 <!-- Live Activity -->
                 <div class="section-card">
                     <div class="section-header">
-                        <h3 class="section-title"><i class="fas fa-bolt"></i> Atividade ao Vivo</h3>
-                        <span class="status-badge status-active" style="font-size:10px;">
-                            <i class="fas fa-circle" style="font-size:6px;animation:pulse 2s infinite;"></i> AO VIVO
-                        </span>
+                        <div style="display:flex;align-items:center;gap:10px;">
+                            <h3 class="section-title"><i class="fas fa-bolt"></i> Atividade ao Vivo</h3>
+                            <span class="status-badge status-active" style="font-size:10px;"><i class="fas fa-circle" style="font-size:6px;animation:pulse 2s infinite;"></i> AO VIVO</span>
+                        </div>
+                        <button class="btn btn-sm btn-primary" onclick="window.adminEditManager.openCreateModal()" style="font-size:11px;padding:4px 8px;">
+                            <i class="fas fa-plus"></i> Novo Ponto Manual
+                        </button>
                     </div>
                     <div class="records-list" id="liveActivityList">
                         <div class="empty-state">

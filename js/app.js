@@ -614,7 +614,80 @@ class PontoTrackApp {
     document.getElementById('registrationStep1').style.display = 'block';
     document.getElementById('registrationStep2').style.display = 'none';
     document.getElementById('capturedPhoto').style.display = 'none';
-    if(document.getElementById('regObservation')) document.getElementById('regObservation').value = '';
+
+    const obsField = document.getElementById('regObservation');
+    if (obsField) {
+      obsField.value = '';
+      obsField.style.border = '';
+      obsField.placeholder = 'Adicionar observação (opcional) - Ex: Cheguei mais cedo para ir a outro local';
+    }
+
+    // ── Verificar se precisa de observação obrigatória (atraso/adiantamento > 15 min) ──
+    const TOLERANCE_MIN = 15;
+    let requiresObs = false;
+    let obsReason = '';
+
+    // Remover alerta anterior se existir
+    const existingAlert = document.getElementById('regTimeAlert');
+    if (existingAlert) existingAlert.remove();
+
+    if (type === 'entry' || type === 'exit') {
+      const now = new Date();
+      const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+      let expectedTime = '';
+      let expectedMinutes = 0;
+
+      const isAnaides = (this.currentUser?.name || '').toLowerCase().includes('anaides');
+
+      if (type === 'entry') {
+        expectedTime = isAnaides ? '07:00' : (this.settings.startTime || '07:30');
+        const [eH, eM] = expectedTime.split(':').map(Number);
+        expectedMinutes = eH * 60 + eM;
+      } else if (type === 'exit') {
+        expectedTime = isAnaides ? '18:00' : (this.settings.endTime || '17:30');
+        const [eH, eM] = expectedTime.split(':').map(Number);
+        expectedMinutes = eH * 60 + eM;
+      }
+
+      const diffMinutes = currentMinutes - expectedMinutes;
+
+      if (type === 'entry' && diffMinutes > TOLERANCE_MIN) {
+        // Entrada atrasada (>15 min depois do horário)
+        requiresObs = true;
+        obsReason = `⚠️ Entrada com ${diffMinutes} min de atraso (esperado: ${expectedTime}). Justifique o motivo.`;
+      } else if (type === 'entry' && diffMinutes < -TOLERANCE_MIN) {
+        // Entrada adiantada (>15 min antes do horário)
+        requiresObs = true;
+        obsReason = `⏰ Entrada ${Math.abs(diffMinutes)} min adiantada (esperado: ${expectedTime}). Justifique o motivo.`;
+      } else if (type === 'exit' && diffMinutes > TOLERANCE_MIN) {
+        // Saída atrasada (saindo >15 min depois do esperado)
+        requiresObs = true;
+        obsReason = `⚠️ Saída ${diffMinutes} min após o horário (esperado: ${expectedTime}). Justifique o motivo.`;
+      } else if (type === 'exit' && diffMinutes < -TOLERANCE_MIN) {
+        // Saída adiantada (saindo >15 min antes)
+        requiresObs = true;
+        obsReason = `⏰ Saída ${Math.abs(diffMinutes)} min adiantada (esperado: ${expectedTime}). Justifique o motivo.`;
+      }
+    }
+
+    this.currentRegistration.requiresObservation = requiresObs;
+
+    if (requiresObs && obsField) {
+      // Inserir alerta visual acima do campo de observação
+      const alertDiv = document.createElement('div');
+      alertDiv.id = 'regTimeAlert';
+      alertDiv.style.cssText = 'background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.4); border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; font-size: 13px; color: #D97706; display: flex; align-items: center; gap: 8px;';
+      alertDiv.innerHTML = `<i class="fas fa-exclamation-triangle"></i><span>${obsReason}</span>`;
+      obsField.parentElement.insertBefore(alertDiv, obsField);
+
+      // Estilizar campo como obrigatório
+      obsField.placeholder = 'OBRIGATÓRIO: Informe o motivo do horário fora do padrão';
+      obsField.style.border = '2px solid #F59E0B';
+      obsField.required = true;
+    } else if (obsField) {
+      obsField.required = false;
+    }
 
     if (this.settings.requirePhoto) {
       document.getElementById('cameraContainer').style.display = 'block';
@@ -700,6 +773,35 @@ class PontoTrackApp {
   async confirmRegistration() {
     const btnConfirm = document.querySelector('#registrationModal .btn-primary');
     if (this.isSavingRegistration) return; // Prevent double clicks
+
+    // ── Validar observação obrigatória (atraso/adiantamento > 15 min) ──
+    if (this.currentRegistration?.requiresObservation) {
+      const obsValue = document.getElementById('regObservation')?.value.trim();
+      if (!obsValue) {
+        const obsField = document.getElementById('regObservation');
+        if (obsField) {
+          obsField.style.border = '2px solid var(--danger)';
+          obsField.focus();
+          // Animação de shake no campo
+          obsField.style.animation = 'none';
+          obsField.offsetHeight; // trigger reflow
+          obsField.style.animation = 'shake 0.5s ease';
+        }
+        this.showToast('⚠️ Observação obrigatória! Informe o motivo do horário fora do padrão.', 'warning');
+        return;
+      }
+    }
+
+    // ── Caixa de confirmação e Alerta de Atraso ──
+    let confirmMsg = `Confirma o registro de ponto?`;
+    if (this.currentRegistration?.requiresObservation) {
+        confirmMsg = `⚠️ ALERTA DE HORÁRIO ⚠️\nVocê está registrando com mais de 15 minutos de diferença do esperado.\n\n` + confirmMsg;
+    }
+    
+    if (!confirm(confirmMsg)) {
+        return;
+    }
+
     this.isSavingRegistration = true;
     if (btnConfirm) btnConfirm.disabled = true;
 
@@ -715,8 +817,12 @@ class PontoTrackApp {
     const existingRecords = await window.ptDB.getRecordsByEmployeeAndDate(this.currentUser.id, today);
     const duplicate = existingRecords.find(r => r.type === this.currentRegistration.type);
 
+    // Identificador único e previsível (Evita registros duplos via múltiplos dispositivos)
+    const safeDate = today.replace(/\//g, '');
+    const deterministicId = `rec_${this.currentUser.id}_${safeDate}_${this.currentRegistration.type}`;
+
     const record = {
-      id: duplicate ? duplicate.id : `rec_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      id: deterministicId,
       employeeId: this.currentUser.id,
       employeeName: this.currentUser.name,
       type: this.currentRegistration.type,

@@ -116,22 +116,6 @@ class ReportsManager {
 
   _calculateDayStats(dayRecords, empInfo) {
     const sorted = [...dayRecords].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-    let workedMin = 0;
-    let entryTime = null;
-
-    for (const r of sorted) {
-      if (r.type === 'entry' || r.type === 'extra_entry') {
-        if (!entryTime) entryTime = new Date(r.timestamp);
-      } else if ((r.type === 'break' || r.type === 'lunch') && entryTime) {
-        workedMin += Math.max(0, Math.floor((new Date(r.timestamp) - entryTime) / 60000));
-        entryTime = null;
-      } else if ((r.type === 'break_end' || r.type === 'lunch_end') && !entryTime) {
-        entryTime = new Date(r.timestamp);
-      } else if ((r.type === 'exit' || r.type === 'extra_exit') && entryTime) {
-        workedMin += Math.max(0, Math.floor((new Date(r.timestamp) - entryTime) / 60000));
-        entryTime = null;
-      }
-    }
 
     const entry = dayRecords.find(r => r.type === 'entry');
     const exit = dayRecords.find(r => r.type === 'exit');
@@ -147,9 +131,136 @@ class ReportsManager {
 
     const empName = (empInfo?.name || '').toLowerCase();
     const isSpecialEmp = empName.includes('raimundo') || empName.includes('joao adelmo') || empName.includes('joão adelmo');
+
+    // ── Horários de referência para registros ausentes ──
+    const REF_ENTRY = '07:30';
+    const REF_EXIT = '17:30';
+
+    // Determinar se vamos usar valores de referência para entry/exit
+    // (não se aplica a serviços extra isolados ou dias sem nenhum registro regular)
+    const hasRegularEntry = !!entry;
+    const hasRegularExit = !!exit;
+    const hasAnyRegularRecord = hasRegularEntry || hasRegularExit || !!lunchOut || !!lunchIn;
+
+    let usedRefEntry = false;
+    let usedRefExit = false;
+
+    // Montar string de entrada/saída para exibição e timestamps sintéticos para cálculo
+    let entryTimeStr = '--:--';
+    let exitTimeStr = '--:--';
+    let entryTimestamp = null;
+    let exitTimestamp = null;
+
+    if (hasRegularEntry) {
+      entryTimeStr = entry.time;
+      entryTimestamp = new Date(entry.timestamp);
+    } else if (extraEntry && !hasAnyRegularRecord) {
+      // Apenas serviço extra, sem registros regulares - não aplicar referência
+      entryTimeStr = `Extra: ${extraEntry.time}`;
+      entryTimestamp = new Date(extraEntry.timestamp);
+    } else if (hasAnyRegularRecord) {
+      // Falta entrada mas tem outros registros regulares → usar referência
+      entryTimeStr = REF_ENTRY;
+      usedRefEntry = true;
+      const [rH, rM] = REF_ENTRY.split(':').map(Number);
+      entryTimestamp = new Date(dateObj);
+      entryTimestamp.setHours(rH, rM, 0, 0);
+    }
+
+    if (hasRegularExit) {
+      exitTimeStr = exit.time;
+      exitTimestamp = new Date(exit.timestamp);
+    } else if (extraExit && !hasAnyRegularRecord) {
+      exitTimeStr = `Extra: ${extraExit.time}`;
+      exitTimestamp = new Date(extraExit.timestamp);
+    } else if (hasAnyRegularRecord) {
+      // Falta saída mas tem outros registros regulares → usar referência
+      exitTimeStr = REF_EXIT;
+      usedRefExit = true;
+      const [rH, rM] = REF_EXIT.split(':').map(Number);
+      exitTimestamp = new Date(dateObj);
+      exitTimestamp.setHours(rH, rM, 0, 0);
+    }
+
+    // ── Recalcular horas trabalhadas usando timestamps reais + sintéticos ──
+    // Construir lista combinada de eventos, substituindo entry/exit faltantes pelos de referência
+    const calcRecords = [];
     
+    for (const r of sorted) {
+      if (r.type === 'entry' || r.type === 'exit') {
+        calcRecords.push({ type: r.type, timestamp: new Date(r.timestamp) });
+      } else if (r.type === 'extra_entry' || r.type === 'extra_exit') {
+        calcRecords.push({ type: r.type, timestamp: new Date(r.timestamp) });
+      } else {
+        // lunch, lunch_end, break, break_end
+        calcRecords.push({ type: r.type, timestamp: new Date(r.timestamp) });
+      }
+    }
+
+    // Injetar entry de referência se não existe
+    if (!hasRegularEntry && usedRefEntry && entryTimestamp) {
+      calcRecords.push({ type: 'entry', timestamp: entryTimestamp, synthetic: true });
+    }
+    // Injetar exit de referência se não existe
+    if (!hasRegularExit && usedRefExit && exitTimestamp) {
+      calcRecords.push({ type: 'exit', timestamp: exitTimestamp, synthetic: true });
+    }
+
+    // Reordenar
+    calcRecords.sort((a, b) => a.timestamp - b.timestamp);
+
+    // Calcular minutos trabalhados (total e extra separadamente)
+    let workedMin = 0;
+    let extraWorkedMin = 0;
+    let currentEntry = null;
+    let inExtraSegment = false;
+
+    for (const r of calcRecords) {
+      if (r.type === 'entry') {
+        if (!currentEntry) { currentEntry = r.timestamp; inExtraSegment = false; }
+      } else if (r.type === 'extra_entry') {
+        if (!currentEntry) { currentEntry = r.timestamp; inExtraSegment = true; }
+      } else if ((r.type === 'break' || r.type === 'lunch') && currentEntry) {
+        const mins = Math.max(0, Math.floor((r.timestamp - currentEntry) / 60000));
+        workedMin += mins;
+        if (inExtraSegment) extraWorkedMin += mins;
+        currentEntry = null;
+      } else if ((r.type === 'break_end' || r.type === 'lunch_end') && !currentEntry) {
+        currentEntry = r.timestamp;
+        // Retorno de pausa é sempre jornada regular
+        inExtraSegment = false;
+      } else if (r.type === 'exit' && currentEntry) {
+        const mins = Math.max(0, Math.floor((r.timestamp - currentEntry) / 60000));
+        workedMin += mins;
+        if (inExtraSegment) extraWorkedMin += mins;
+        currentEntry = null;
+      } else if (r.type === 'extra_exit' && currentEntry) {
+        const mins = Math.max(0, Math.floor((r.timestamp - currentEntry) / 60000));
+        workedMin += mins;
+        extraWorkedMin += mins;
+        currentEntry = null;
+      }
+    }
+
+    // Se terminou com entry aberto (sem exit e sem referência), fechar com agora apenas se for hoje
+    if (currentEntry && !usedRefExit) {
+      const today = new Date().toLocaleDateString('pt-BR');
+      if (dateStr === today) {
+        const mins = Math.max(0, Math.floor((new Date() - currentEntry) / 60000));
+        workedMin += mins;
+        if (inExtraSegment) extraWorkedMin += mins;
+      }
+    }
+
+    // ── Flag: dia com APENAS serviço extra (sem registros regulares) ──
+    const onlyExtraService = !hasAnyRegularRecord && (!!extraEntry || !!extraExit);
+
+    // ── Jornada esperada ──
     let expectedMin = 8 * 60;
-    if (isSpecialEmp) {
+    if (onlyExtraService) {
+      // Dia somente de serviço extra → jornada esperada = 0 (tudo conta como extra)
+      expectedMin = 0;
+    } else if (isSpecialEmp) {
       if (dayIndex === 6 || dayIndex === 0) expectedMin = 0;
     } else {
       if (dayIndex === 0) expectedMin = 0;
@@ -161,16 +272,24 @@ class ReportsManager {
     let overtimeValue = 0;
     if (overtimeMin > 0) overtimeValue = this._calculateHourlyRate(overtimeMin, dayIndex, isSpecialEmp, empInfo);
 
+    // ── Notas ──
     let notes = dayRecords.map(r => r.observation).filter(Boolean).join('; ');
     if (extraEntry) notes = `[Serviço Extra] ${notes}`;
+    const refNotes = [];
+    if (usedRefEntry) refNotes.push(`Entrada ref. ${REF_ENTRY}`);
+    if (usedRefExit) refNotes.push(`Saída ref. ${REF_EXIT}`);
+    if (refNotes.length > 0) {
+      notes = notes ? `${notes} | [${refNotes.join(', ')}]` : `[${refNotes.join(', ')}]`;
+    }
 
     return {
       date: dateStr, dayOfWeek: dayOfWeekStr,
-      entry: entry ? entry.time : (extraEntry ? `Extra: ${extraEntry.time}` : '--:--'),
+      entry: entryTimeStr,
       lunchOut: lunchOut ? lunchOut.time : '--:--',
       lunchIn: lunchIn ? lunchIn.time : '--:--',
-      exit: exit ? exit.time : (extraExit ? `Extra: ${extraExit.time}` : '--:--'),
-      worked: workedMin, overtime: overtimeMin, netOvertime, overtimeValue, notes
+      exit: exitTimeStr,
+      worked: workedMin, overtime: overtimeMin, netOvertime, overtimeValue, notes,
+      usedRefEntry, usedRefExit, extraWorkedMin, onlyExtraService
     };
   }
 
@@ -211,14 +330,15 @@ class ReportsManager {
 
   // ==================== EXCEL PROFISSIONAL ====================
 
-  // Converte string "HH:MM" para valor numérico Excel (fração do dia)
+  // Converte string "HH:MM" ou "Extra: HH:MM" para valor numérico Excel (fração do dia)
   _timeToExcel(timeStr) {
-    if (!timeStr || timeStr === '--:--' || timeStr.includes('Extra')) return null;
+    if (!timeStr || timeStr === '--:--') return null;
     const clean = timeStr.replace('Extra: ', '');
     const parts = clean.split(':');
     if (parts.length < 2) return null;
-    const h = parseInt(parts[0]) || 0;
-    const m = parseInt(parts[1]) || 0;
+    const h = parseInt(parts[0]);
+    const m = parseInt(parts[1]);
+    if (isNaN(h) || isNaN(m)) return null;
     return (h + m / 60) / 24;
   }
 
@@ -300,20 +420,32 @@ class ReportsManager {
 
         const dateObj = this._parseDate(d.date);
         const dayIdx = dateObj.getDay();
+        // Jornada esperada (respeitar dias só de serviço extra)
         let expectedH = 8;
-        if (isSpecialEmp) { if (dayIdx === 0 || dayIdx === 6) expectedH = 0; }
+        if (d.onlyExtraService) {
+          expectedH = 0;
+        } else if (isSpecialEmp) { if (dayIdx === 0 || dayIdx === 6) expectedH = 0; }
         else { if (dayIdx === 0) expectedH = 0; else if (dayIdx === 6) expectedH = 4; }
 
         const R = row + 1; // Excel 1-indexed
+
+        // Estilos para referência e serviço extra
+        const refTmSt = { font: { sz: 10, italic: true, color: { rgb: "6366F1" } }, fill: { fgColor: { rgb: bg } }, alignment: { horizontal: "center" }, border: brd, numFmt: 'h:mm' };
+        const extraTmSt = { font: { sz: 10, italic: true, color: { rgb: "D97706" } }, fill: { fgColor: { rgb: bg } }, alignment: { horizontal: "center" }, border: brd, numFmt: 'h:mm' };
 
         // A=Data, B=Dia (texto)
         ws[XLSX.utils.encode_cell({ r: row, c: 0 })] = { v: d.date, t: 's', s: cSt };
         ws[XLSX.utils.encode_cell({ r: row, c: 1 })] = { v: d.dayOfWeek, t: 's', s: cSt };
 
-        // C=Entrada (valor tempo Excel real, formato h:mm)
+        // Determinar estilo de entrada
         const eVal = this._timeToExcel(d.entry);
+        let entryStyle = tmSt;
+        if (d.usedRefEntry) entryStyle = refTmSt;
+        else if (d.onlyExtraService) entryStyle = extraTmSt;
+
+        // C=Entrada
         ws[XLSX.utils.encode_cell({ r: row, c: 2 })] = eVal !== null
-          ? { v: eVal, t: 'n', s: tmSt } : { v: '', t: 's', s: cSt };
+          ? { v: eVal, t: 'n', s: entryStyle } : { v: '', t: 's', s: cSt };
 
         // D=Saída Almoço
         const loVal = this._timeToExcel(d.lunchOut);
@@ -325,17 +457,29 @@ class ReportsManager {
         ws[XLSX.utils.encode_cell({ r: row, c: 4 })] = liVal !== null
           ? { v: liVal, t: 'n', s: tmSt } : { v: '', t: 's', s: cSt };
 
-        // F=Saída
+        // Determinar estilo de saída
         const xVal = this._timeToExcel(d.exit);
-        ws[XLSX.utils.encode_cell({ r: row, c: 5 })] = xVal !== null
-          ? { v: xVal, t: 'n', s: tmSt } : { v: '', t: 's', s: cSt };
+        let exitStyle = tmSt;
+        if (d.usedRefExit) exitStyle = refTmSt;
+        else if (d.onlyExtraService) exitStyle = extraTmSt;
 
-        // G=Jornada Esperada (duração: 8h = 8/24 formatada [h]:mm)
+        // F=Saída
+        ws[XLSX.utils.encode_cell({ r: row, c: 5 })] = xVal !== null
+          ? { v: xVal, t: 'n', s: exitStyle } : { v: '', t: 's', s: cSt };
+
+        // G=Jornada Esperada (duração: expectedH/24 formatada [h]:mm)
         ws[XLSX.utils.encode_cell({ r: row, c: 6 })] = { v: expectedH / 24, t: 'n', s: drSt };
 
         // H=Horas Trabalhadas = FÓRMULA AUTOMÁTICA
-        // =SE(E(ÉNÚMERO(C);ÉNÚMERO(F));SE(E(ÉNÚMERO(D);ÉNÚMERO(E));(F-C)-(E-D);F-C);0)
-        const fH = `IF(AND(ISNUMBER(C${R}),ISNUMBER(F${R})),IF(AND(ISNUMBER(D${R}),ISNUMBER(E${R})),(F${R}-C${R})-(E${R}-D${R}),F${R}-C${R}),0)`;
+        // Fórmula base: SE(E(ÉNÚMERO(C);ÉNÚMERO(F)); SE(E(ÉNÚMERO(D);ÉNÚMERO(E)); (F-C)-(E-D); F-C); 0)
+        let fH = `IF(AND(ISNUMBER(C${R}),ISNUMBER(F${R})),IF(AND(ISNUMBER(D${R}),ISNUMBER(E${R})),(F${R}-C${R})-(E${R}-D${R}),F${R}-C${R}),0)`;
+        
+        // Se tem serviço extra JUNTO com jornada regular, adicionar horas extra como constante
+        // (as horas extra não estão nas colunas C/F pois essas mostram a jornada regular)
+        if (d.extraWorkedMin > 0 && !d.onlyExtraService) {
+          const extraFraction = d.extraWorkedMin / (24 * 60);
+          fH = `${fH}+${extraFraction.toFixed(10)}`;
+        }
         ws[XLSX.utils.encode_cell({ r: row, c: 7 })] = { f: fH, t: 'n', s: drSt };
 
         // I=Horas Extras: =SE(H-G>0; H-G; 0)
@@ -399,6 +543,7 @@ class ReportsManager {
         "Todos os horários estão em formato HH:MM. Edite as células de Entrada (C), Saída Almoço (D), Ret. Almoço (E) e Saída (F).",
         "Ao alterar qualquer horário, Horas Trabalhadas (H), Extras (I), Saldo (J), Valor (K) e TODOS os totais recalculam automaticamente.",
         "Para alterar a jornada esperada de um dia, edite a coluna G (ex: para meio período, digite 4:00).",
+        "Horários em itálico (azul) são valores de referência (entrada: 07:30 / saída: 17:30) aplicados por ausência de registro.",
         "Gerado por PontoTrack em " + new Date().toLocaleDateString('pt-BR') + " às " + new Date().toLocaleTimeString('pt-BR'),
       ];
       legendas.forEach(txt => {
@@ -442,37 +587,73 @@ class ReportsManager {
       
       const col = [10, 35, 65, 85, 105, 125, 145, 170, 195, 230];
       doc.setFont('helvetica', 'bold');
-      const headers = ['Data', 'Dia', 'In', 'Break', 'Back', 'Out', 'Trib.', 'Extra', 'Valor Ext', 'Notas'];
+      const headers = ['Data', 'Dia', 'Entrada', 'Almoço', 'Retorno', 'Saída', 'Trab.', 'Extra', 'Valor Ext', 'Notas'];
       headers.forEach((h, i) => doc.text(h, col[i], y));
       
       doc.line(10, y + 2, 287, y + 2);
       y += 8;
       doc.setFont('helvetica', 'normal');
 
+      let hasRefValues = false;
+
       emp.processedDays.forEach(d => {
         if (y > 180) { doc.addPage(); y = 20; }
+        
+        doc.setTextColor(50);
         doc.text(d.date, col[0], y);
         doc.text(d.dayOfWeek.substring(0,3), col[1], y);
-        doc.text(d.entry, col[2], y);
+        
+        // Entrada - destacar se é referência
+        if (d.usedRefEntry) {
+          doc.setTextColor(99, 102, 241); // Roxo/azul para referência
+          doc.text(`${d.entry}*`, col[2], y);
+          hasRefValues = true;
+        } else {
+          doc.setTextColor(50);
+          doc.text(d.entry, col[2], y);
+        }
+        
+        doc.setTextColor(50);
         doc.text(d.lunchOut, col[3], y);
         doc.text(d.lunchIn, col[4], y);
-        doc.text(d.exit, col[5], y);
+        
+        // Saída - destacar se é referência
+        if (d.usedRefExit) {
+          doc.setTextColor(99, 102, 241);
+          doc.text(`${d.exit}*`, col[5], y);
+          hasRefValues = true;
+        } else {
+          doc.setTextColor(50);
+          doc.text(d.exit, col[5], y);
+        }
+        
+        doc.setTextColor(50);
         doc.text(this._formatMinutes(d.worked), col[6], y);
         doc.text(this._formatMinutes(d.overtime), col[7], y);
         doc.text(d.overtimeValue > 0 ? `R$${d.overtimeValue.toFixed(2)}` : 'R$0.00', col[8], y);
-        doc.text(d.notes.substring(0, 25), col[9], y);
+        doc.text((d.notes || '').substring(0, 30), col[9], y);
         y += 7;
       });
 
       y += 10;
       doc.setFillColor(241, 245, 249);
       doc.rect(10, y, 277, 25, 'F');
+      doc.setTextColor(50);
       doc.setFont('helvetica', 'bold');
       doc.text(`Dias Trab: ${emp.daysWorked}`, 15, y + 10);
       doc.text(`Horas: ${this._formatMinutes(emp.totalWorked)}`, 60, y + 10);
       doc.text(`Extras: ${this._formatMinutes(emp.totalOvertime)}`, 105, y + 10);
       doc.text(`Valor Extra: R$ ${emp.totalOvertimeValue.toFixed(2)}`, 150, y + 10);
       doc.text(`Média Diária: ${this._formatMinutes(emp.daysWorked ? Math.round(emp.totalWorked / emp.daysWorked) : 0)}`, 220, y + 10);
+
+      // Rodapé com legenda se houve valores de referência
+      if (hasRefValues) {
+        y += 30;
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'italic');
+        doc.setTextColor(99, 102, 241);
+        doc.text('* Horário de referência utilizado (entrada: 07:30 / saída: 17:30) por ausência de registro.', 10, y);
+      }
     });
 
     doc.save(`pontotrack_relatorio_${Date.now()}.pdf`);
