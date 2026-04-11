@@ -467,8 +467,11 @@ class PontoTrackApp {
       // Obter configuração de tempo para não repetir a mesma notificação dentro do mesmo minuto
       if (this.lastReminderSent === timeStr) return;
       
-      const isStart = timeStr === this.settings.startTime;
-      const isEnd = timeStr === this.settings.endTime;
+      const isSaturday = now.getDay() === 6;
+      const expectedEnd = isSaturday ? '11:30' : (this.settings.endTime || '17:30');
+
+      const isStart = timeStr === (this.settings.startTime || '07:30');
+      const isEnd = timeStr === expectedEnd;
       
       if (isStart || isEnd) {
         this.lastReminderSent = timeStr;
@@ -645,7 +648,12 @@ class PontoTrackApp {
         const [eH, eM] = expectedTime.split(':').map(Number);
         expectedMinutes = eH * 60 + eM;
       } else if (type === 'exit') {
-        expectedTime = isAnaides ? '18:00' : (this.settings.endTime || '17:30');
+        const isSaturday = now.getDay() === 6;
+        let defaultEnd = this.settings.endTime || '17:30';
+        if (isSaturday) {
+            defaultEnd = '11:30';
+        }
+        expectedTime = isAnaides ? '18:00' : defaultEnd;
         const [eH, eM] = expectedTime.split(':').map(Number);
         expectedMinutes = eH * 60 + eM;
       }
