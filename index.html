@@ -60,7 +60,9 @@
 
     <!-- ============ SYNC STATUS ============ -->
     <div class="sync-status" id="syncStatus">
-        <i class="fas fa-check-circle"></i> Sincronizado
+        <i class="fas fa-check-circle"></i> 
+        <span id="syncStatusText">Sincronizado</span>
+        <span id="pendingCount" class="pending-badge" style="display:none; margin-left:8px; background:var(--warning); color:#fff; padding:2px 8px; border-radius:10px; font-size:10px;">0 pendente(s)</span>
     </div>
 
     <!-- ============ TOAST CONTAINER ============ -->
@@ -135,7 +137,7 @@
 
             <div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--border);text-align:center;font-size:12px;color:var(--text-tertiary);">
                 <p><i class="fas fa-shield-alt" style="color:var(--primary-light);"></i> Acesso seguro • Dados criptografados</p>
-                <p style="margin-top:4px;">Contate o administrador para credenciais</p>
+                <p style="margin-top:4px;">PontoTrack v4.3 • Controle de Ponto Inteligente</p>
             </div>
         </div>
     </div>
@@ -149,7 +151,10 @@
                     <div class="user-avatar" id="userAvatar">--</div>
                     <div class="user-details">
                         <h3 id="userName">Funcionário</h3>
-                        <p id="userRole">Cargo</p>
+                        <div style="display:flex; align-items:center;">
+                            <p id="userRole">Cargo</p>
+                            <span id="headerPendingBadge" class="pending-badge" style="display:none; margin-left:8px; background:var(--warning); color:#fff; padding:2px 6px; border-radius:10px; font-size:10px; font-weight:bold; animation: pulse 2s infinite;">PENDENTE</span>
+                        </div>
                     </div>
                 </div>
                 <div class="header-actions">

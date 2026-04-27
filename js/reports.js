@@ -128,13 +128,14 @@ class ReportsManager {
     const dateObj = this._parseDate(dateStr);
     const dayOfWeekStr = this._getWeekdayName(dateStr);
     const dayIndex = dateObj.getDay();
+    const isSaturday = dayIndex === 6;
 
     const empName = (empInfo?.name || '').toLowerCase();
     const isSpecialEmp = empName.includes('raimundo') || empName.includes('joao adelmo') || empName.includes('joão adelmo');
 
     // ── Horários de referência para registros ausentes ──
     const REF_ENTRY = '07:30';
-    const REF_EXIT = '17:30';
+    const REF_EXIT = isSaturday ? '11:30' : '17:30';
 
     // Determinar se vamos usar valores de referência para entry/exit
     // (não se aplica a serviços extra isolados ou dias sem nenhum registro regular)
@@ -543,7 +544,7 @@ class ReportsManager {
         "Todos os horários estão em formato HH:MM. Edite as células de Entrada (C), Saída Almoço (D), Ret. Almoço (E) e Saída (F).",
         "Ao alterar qualquer horário, Horas Trabalhadas (H), Extras (I), Saldo (J), Valor (K) e TODOS os totais recalculam automaticamente.",
         "Para alterar a jornada esperada de um dia, edite a coluna G (ex: para meio período, digite 4:00).",
-        "Horários em itálico (azul) são valores de referência (entrada: 07:30 / saída: 17:30) aplicados por ausência de registro.",
+        "Horários em itálico (azul) são valores de referência (Seg-Sex: 07:30/17:30 | Sáb: 07:30/11:30) aplicados por ausência de registro.",
         "Gerado por PontoTrack em " + new Date().toLocaleDateString('pt-BR') + " às " + new Date().toLocaleTimeString('pt-BR'),
       ];
       legendas.forEach(txt => {
@@ -652,7 +653,7 @@ class ReportsManager {
         doc.setFontSize(8);
         doc.setFont('helvetica', 'italic');
         doc.setTextColor(99, 102, 241);
-        doc.text('* Horário de referência utilizado (entrada: 07:30 / saída: 17:30) por ausência de registro.', 10, y);
+        doc.text('* Horário de referência utilizado (Seg-Sex: 07:30/17:30 | Sáb: 07:30/11:30) por ausência de registro.', 10, y);
       }
     });
 

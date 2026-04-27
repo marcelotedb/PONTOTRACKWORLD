@@ -24,6 +24,14 @@ class SyncManager {
       await this.fullSync();
       this._setupRealtimeListeners();
     }
+
+    // Iniciar auto-sync a cada 2 minutos para garantir que nada fique para trás
+    if (this.autoSyncInterval) clearInterval(this.autoSyncInterval);
+    this.autoSyncInterval = setInterval(() => {
+      if (this.isOnline && this.firebaseReady) {
+        this.syncPending();
+      }
+    }, 120000);
   }
 
   _setupNetworkListeners() {
@@ -64,21 +72,39 @@ class SyncManager {
 
   _updateSyncUI(status) {
     const el = document.getElementById('syncStatus');
+    const txt = document.getElementById('syncStatusText');
     if (!el) return;
     
     el.className = 'sync-status active ' + status;
     
+    const statusLabels = {
+      syncing: 'Sincronizando...',
+      synced: 'Sincronizado',
+      offline: 'Offline'
+    };
+
     const icons = {
-      syncing: '<i class="fas fa-sync"></i> Sincronizando...',
-      synced: '<i class="fas fa-check-circle"></i> Sincronizado',
-      offline: '<i class="fas fa-wifi-slash"></i> Offline'
+      syncing: '<i class="fas fa-sync"></i>',
+      synced: '<i class="fas fa-check-circle"></i>',
+      offline: '<i class="fas fa-wifi-slash"></i>'
     };
     
-    el.innerHTML = icons[status] || icons.offline;
+    if (txt) txt.textContent = statusLabels[status] || statusLabels.offline;
+    
+    const iconEl = el.querySelector('i');
+    if (iconEl) {
+        iconEl.outerHTML = icons[status] || icons.offline;
+    }
     
     if (status === 'synced') {
-      setTimeout(() => el.classList.remove('active'), 3000);
+      setTimeout(() => {
+          // Só esconde se não houver pendências
+          window.ptDB.getSyncQueue().then(queue => {
+              if (queue.length === 0) el.classList.remove('active');
+          });
+      }, 3000);
     }
+    this._checkPendingCount();
   }
 
   // Full sync: Firebase → IndexedDB
@@ -211,6 +237,27 @@ class SyncManager {
       console.error('[Sync] Erro na sincronização pendente:', error);
     } finally {
       this.isSyncing = false;
+      this._checkPendingCount();
+    }
+  }
+
+  async _checkPendingCount() {
+    const queue = await window.ptDB.getSyncQueue();
+    const elCount = document.getElementById('pendingCount');
+    const elHeader = document.getElementById('headerPendingBadge');
+    const elSync = document.getElementById('syncStatus');
+
+    if (queue.length > 0) {
+      if (elCount) {
+        elCount.textContent = `${queue.length} pendente(s)`;
+        elCount.style.display = 'inline-block';
+      }
+      if (elHeader) elHeader.style.display = 'inline-block';
+      if (elSync) elSync.classList.add('active');
+    } else {
+      if (elCount) elCount.style.display = 'none';
+      if (elHeader) elHeader.style.display = 'none';
+      // Se estiver sincronizado e sem pendências, pode esconder após o timeout
     }
   }
 
