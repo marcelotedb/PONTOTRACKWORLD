@@ -127,6 +127,30 @@ class PontoTrackApp {
   }
 
   // ==================== CLOCK ====================
+  // Helper para data padronizada DD/MM/YYYY
+  _getFormattedDate(date = new Date()) {
+    const d = String(date.getDate()).padStart(2, '0');
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const y = date.getFullYear();
+    return `${d}/${m}/${y}`;
+  }
+
+  async refreshData() {
+    this.showToast('Sincronizando dados...', 'info');
+    if (window.syncManager) {
+      await window.syncManager.fullSync();
+      if (this.currentUser?.type === 'admin') {
+        await this._updateAdminDashboard();
+        await this._renderEmployees();
+      } else {
+        await this._checkWorkStatus();
+        await this._updateEmployeeStats();
+        await this._loadRecentRecords();
+      }
+      this.showToast('Dados atualizados!', 'success');
+    }
+  }
+
   _startClock() {
     this._updateClock();
     this.clockInterval = setInterval(() => this._updateClock(), 1000);
@@ -511,7 +535,7 @@ class PontoTrackApp {
 
 
   async _updateEmployeeStats() {
-    const t = new Date().toLocaleDateString('pt-BR');
+    const t = this._getFormattedDate();
     const records = await window.ptDB.getRecordsByEmployee(this.currentUser.id);
     const todayRecs = records.filter(r => r.date === t);
 
@@ -815,7 +839,7 @@ class PontoTrackApp {
 
     const locEl = document.getElementById('locationInfo');
     const now = new Date();
-    const today = now.toLocaleDateString('pt-BR');
+    const today = this._getFormattedDate(now);
 
     // Get fresh location
     const position = await window.geoManager.getCurrentPosition();
@@ -916,7 +940,7 @@ class PontoTrackApp {
   // ==================== ADMIN DASHBOARD ====================
   async _updateAdminDashboard() {
     const now = new Date();
-    const today = now.toLocaleDateString('pt-BR');
+    const today = this._getFormattedDate(now);
     const employees = await window.ptDB.getAll('employees');
     const records = await window.ptDB.getAll('records');
     const todayRecords = records.filter(r => r.date === today);

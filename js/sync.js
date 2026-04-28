@@ -122,7 +122,7 @@ class SyncManager {
       // Sync records (most recent 200)
       const recSnap = await this.firestore.collection('records')
         .orderBy('timestamp', 'desc')
-        .limit(200)
+        .limit(1000)
         .get();
       const records = recSnap.docs.map(doc => ({ id: doc.id, ...doc.data(), syncStatus: 'synced' }));
       await window.ptDB.bulkPut('records', records);

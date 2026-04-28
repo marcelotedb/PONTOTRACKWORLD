@@ -20,14 +20,12 @@ class PontoTrackDB {
         const db = event.target.result;
 
         // Store de funcionários
-        if (db.objectStoreNames.contains('employees')) {
-          // Recriar para corrigir índice unique do email
-          db.deleteObjectStore('employees');
+        if (!db.objectStoreNames.contains('employees')) {
+          const empStore = db.createObjectStore('employees', { keyPath: 'id' });
+          empStore.createIndex('name', 'name', { unique: false });
+          empStore.createIndex('status', 'status', { unique: false });
+          empStore.createIndex('email', 'email', { unique: false });
         }
-        const empStore = db.createObjectStore('employees', { keyPath: 'id' });
-        empStore.createIndex('name', 'name', { unique: false });
-        empStore.createIndex('status', 'status', { unique: false });
-        empStore.createIndex('email', 'email', { unique: false });
 
         // Store de registros de ponto
         if (!db.objectStoreNames.contains('records')) {
