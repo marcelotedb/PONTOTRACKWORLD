@@ -4,9 +4,9 @@
 //             Network First + Cache Fallback para API/dados
 // ============================================================
 
-const CACHE_NAME = 'pontotrack-v4.4';
-const STATIC_CACHE = 'pontotrack-static-v4.4';
-const DYNAMIC_CACHE = 'pontotrack-dynamic-v4.4';
+const CACHE_NAME = 'pontotrack-v4.5';
+const STATIC_CACHE = 'pontotrack-static-v4.5';
+const DYNAMIC_CACHE = 'pontotrack-dynamic-v4.5';
 
 // Assets que devem ser cacheados na instalação
 const STATIC_ASSETS = [
@@ -32,7 +32,7 @@ const STATIC_ASSETS = [
 
 // Instalar Service Worker
 self.addEventListener('install', event => {
-  console.log('[SW] Instalando Service Worker v4.3...');
+  console.log('[SW] Instalando Service Worker v4.5...');
   event.waitUntil(
     caches.open(STATIC_CACHE)
       .then(cache => {
@@ -51,7 +51,7 @@ self.addEventListener('install', event => {
 
 // Ativar Service Worker
 self.addEventListener('activate', event => {
-  console.log('[SW] Ativando Service Worker v4.3...');
+  console.log('[SW] Ativando Service Worker v4.5...');
   event.waitUntil(
     caches.keys().then(cacheNames => {
       return Promise.all(

@@ -1738,14 +1738,37 @@ class PontoTrackApp {
     return this._calcWorkMinutes(records.filter(r => new Date(r.timestamp) >= startOfMonth));
   }
 
+  _getEasterDate(year) {
+    const a = year % 19, b = Math.floor(year / 100), c = year % 100;
+    const d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25);
+    const g = Math.floor((b - f + 1) / 3);
+    const h = (19 * a + b - d - g + 15) % 30;
+    const i = Math.floor(c / 4), k = c % 4;
+    const l = (32 + 2 * e + 2 * i - h - k) % 7;
+    const m = Math.floor((a + 11 * h + 22 * l) / 451);
+    const month = Math.floor((h + l - 7 * m + 114) / 31);
+    const day = ((h + l - 7 * m + 114) % 31) + 1;
+    return new Date(year, month - 1, day);
+  }
+
+  _isNationalHoliday(date) {
+    const year = date.getFullYear(), m = date.getMonth() + 1, d = date.getDate();
+    const fixed = [[1,1],[21,4],[1,5],[7,9],[12,10],[2,11],[15,11],[20,11],[25,12]];
+    if (fixed.some(([fd, fm]) => fd === d && fm === m)) return true;
+    const gf = new Date(this._getEasterDate(year));
+    gf.setDate(gf.getDate() - 2);
+    return gf.getDate() === d && (gf.getMonth() + 1) === m;
+  }
+
   _calcExpectedMonthMinutesUntilToday() {
     let expected = 0;
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth(), 1);
     const today = new Date();
     today.setHours(23, 59, 59, 999);
-    
+
     for (let d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
+      if (this._isNationalHoliday(d)) continue; // feriado nacional → não conta na jornada esperada
       const day = d.getDay();
       if (day >= 1 && day <= 5) expected += 8 * 60; // 8h Segunda a Sexta
       else if (day === 6) expected += 4 * 60; // 4h Sábado

@@ -256,10 +256,13 @@ class ReportsManager {
     // ── Flag: dia com APENAS serviço extra (sem registros regulares) ──
     const onlyExtraService = !hasAnyRegularRecord && (!!extraEntry || !!extraExit);
 
+    // ── Feriado nacional ──
+    const isNationalHoliday = this._isNationalHoliday(dateStr);
+
     // ── Jornada esperada ──
+    // Feriados nacionais e dias só de serviço extra → jornada esperada = 0
     let expectedMin = 8 * 60;
-    if (onlyExtraService) {
-      // Dia somente de serviço extra → jornada esperada = 0 (tudo conta como extra)
+    if (isNationalHoliday || onlyExtraService) {
       expectedMin = 0;
     } else if (isSpecialEmp) {
       if (dayIndex === 6 || dayIndex === 0) expectedMin = 0;
@@ -276,6 +279,10 @@ class ReportsManager {
     // ── Notas ──
     let notes = dayRecords.map(r => r.observation).filter(Boolean).join('; ');
     if (extraEntry) notes = `[Serviço Extra] ${notes}`;
+    if (isNationalHoliday) {
+      const hName = this._getHolidayName(dateStr);
+      notes = notes ? `[Feriado: ${hName}] ${notes}` : `[Feriado: ${hName}]`;
+    }
     const refNotes = [];
     if (usedRefEntry) refNotes.push(`Entrada ref. ${REF_ENTRY}`);
     if (usedRefExit) refNotes.push(`Saída ref. ${REF_EXIT}`);
@@ -290,7 +297,8 @@ class ReportsManager {
       lunchIn: lunchIn ? lunchIn.time : '--:--',
       exit: exitTimeStr,
       worked: workedMin, overtime: overtimeMin, netOvertime, overtimeValue, notes,
-      usedRefEntry, usedRefExit, extraWorkedMin, onlyExtraService
+      usedRefEntry, usedRefExit, extraWorkedMin, onlyExtraService,
+      isNationalHoliday, expectedMin
     };
   }
 
@@ -309,6 +317,66 @@ class ReportsManager {
     const empName = (empInfo?.name || '').toLowerCase();
     const isSpecialEmp = empName.includes('raimundo') || empName.includes('joao adelmo') || empName.includes('joão adelmo');
     return this._calculateHourlyRate(totalOvertimeMin, 1, isSpecialEmp, empInfo);
+  }
+
+  // ── Feriados Nacionais Brasileiros ──
+
+  _getEasterDate(year) {
+    const a = year % 19, b = Math.floor(year / 100), c = year % 100;
+    const d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25);
+    const g = Math.floor((b - f + 1) / 3);
+    const h = (19 * a + b - d - g + 15) % 30;
+    const i = Math.floor(c / 4), k = c % 4;
+    const l = (32 + 2 * e + 2 * i - h - k) % 7;
+    const m = Math.floor((a + 11 * h + 22 * l) / 451);
+    const month = Math.floor((h + l - 7 * m + 114) / 31);
+    const day = ((h + l - 7 * m + 114) % 31) + 1;
+    return new Date(year, month - 1, day);
+  }
+
+  _getNationalHolidays(year) {
+    const holidays = new Set();
+    const pad = n => String(n).padStart(2, '0');
+    const add = (d, m) => holidays.add(`${pad(d)}/${pad(m)}/${year}`);
+    // Feriados fixos nacionais
+    add(1, 1);   // Confraternização Universal
+    add(21, 4);  // Tiradentes
+    add(1, 5);   // Dia do Trabalho
+    add(7, 9);   // Independência do Brasil
+    add(12, 10); // Nossa Senhora Aparecida
+    add(2, 11);  // Finados
+    add(15, 11); // Proclamação da República
+    add(20, 11); // Consciência Negra
+    add(25, 12); // Natal
+    // Sexta-feira Santa (variável – 2 dias antes da Páscoa)
+    const easter = this._getEasterDate(year);
+    const gf = new Date(easter);
+    gf.setDate(gf.getDate() - 2);
+    add(gf.getDate(), gf.getMonth() + 1);
+    return holidays;
+  }
+
+  _isNationalHoliday(dateStr) {
+    const parts = dateStr.split('/');
+    if (parts.length !== 3) return false;
+    return this._getNationalHolidays(parseInt(parts[2])).has(dateStr);
+  }
+
+  _getHolidayName(dateStr) {
+    const [dStr, mStr, yStr] = dateStr.split('/');
+    const d = parseInt(dStr), m = parseInt(mStr), y = parseInt(yStr);
+    const map = {
+      '1/1': 'Confraternização Universal', '21/4': 'Tiradentes',
+      '1/5': 'Dia do Trabalho', '7/9': 'Independência do Brasil',
+      '12/10': 'N. Sra. Aparecida', '2/11': 'Finados',
+      '15/11': 'Proclamação da República', '20/11': 'Consciência Negra',
+      '25/12': 'Natal'
+    };
+    if (map[`${d}/${m}`]) return map[`${d}/${m}`];
+    const gf = new Date(this._getEasterDate(y));
+    gf.setDate(gf.getDate() - 2);
+    if (gf.getDate() === d && (gf.getMonth() + 1) === m) return 'Sexta-feira Santa';
+    return 'Feriado Nacional';
   }
 
   _getWeekdayName(dateStr) {
@@ -412,21 +480,19 @@ class ReportsManager {
       const dataStartRow = row;
 
       emp.processedDays.forEach((d, idx) => {
-        const bg = idx % 2 === 0 ? "FFFFFF" : "F1F5F9";
-        const cSt = { font: { sz: 10, color: { rgb: "1E293B" } }, fill: { fgColor: { rgb: bg } }, alignment: { horizontal: "center" }, border: brd };
-        const tmSt = { font: { sz: 10, color: { rgb: "1E293B" } }, fill: { fgColor: { rgb: bg } }, alignment: { horizontal: "center" }, border: brd, numFmt: 'h:mm' };
-        const drSt = { font: { sz: 10, color: { rgb: "1E293B" } }, fill: { fgColor: { rgb: bg } }, alignment: { horizontal: "center" }, border: brd, numFmt: '[h]:mm' };
-        const mSt = { font: { sz: 10, color: { rgb: "1E293B" } }, fill: { fgColor: { rgb: bg } }, alignment: { horizontal: "right" }, border: brd, numFmt: 'R$ #,##0.00' };
-        const nSt = { font: { sz: 9, color: { rgb: "64748B" } }, fill: { fgColor: { rgb: bg } }, alignment: { horizontal: "left", wrapText: true }, border: brd };
+        // Feriados nacionais recebem fundo laranja claro; demais alternam branco/cinza
+        const bg = d.isNationalHoliday ? "FEF3C7" : (idx % 2 === 0 ? "FFFFFF" : "F1F5F9");
+        const fontColor = d.isNationalHoliday ? "92400E" : "1E293B";
+        const cSt = { font: { sz: 10, color: { rgb: fontColor } }, fill: { fgColor: { rgb: bg } }, alignment: { horizontal: "center" }, border: brd };
+        const tmSt = { font: { sz: 10, color: { rgb: fontColor } }, fill: { fgColor: { rgb: bg } }, alignment: { horizontal: "center" }, border: brd, numFmt: 'h:mm' };
+        const drSt = { font: { sz: 10, color: { rgb: fontColor } }, fill: { fgColor: { rgb: bg } }, alignment: { horizontal: "center" }, border: brd, numFmt: '[h]:mm' };
+        const mSt = { font: { sz: 10, color: { rgb: fontColor } }, fill: { fgColor: { rgb: bg } }, alignment: { horizontal: "right" }, border: brd, numFmt: 'R$ #,##0.00' };
+        const nSt = { font: { sz: 9, color: { rgb: d.isNationalHoliday ? "92400E" : "64748B" } }, fill: { fgColor: { rgb: bg } }, alignment: { horizontal: "left", wrapText: true }, border: brd };
 
         const dateObj = this._parseDate(d.date);
         const dayIdx = dateObj.getDay();
-        // Jornada esperada (respeitar dias só de serviço extra)
-        let expectedH = 8;
-        if (d.onlyExtraService) {
-          expectedH = 0;
-        } else if (isSpecialEmp) { if (dayIdx === 0 || dayIdx === 6) expectedH = 0; }
-        else { if (dayIdx === 0) expectedH = 0; else if (dayIdx === 6) expectedH = 4; }
+        // Jornada esperada vem diretamente do _calculateDayStats (já considera feriados nacionais)
+        const expectedH = (d.expectedMin ?? 0) / 60;
 
         const R = row + 1; // Excel 1-indexed
 
