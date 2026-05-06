@@ -1035,10 +1035,11 @@ class ReportsManager {
       });
 
       // ── Linha de TOTAIS — fórmulas SUM ──
+      const saldo  = totW - totE; // usado pelo Resumo Mensal
       const F1 = dataFirstRow+1, FL = dataLastRow+1; // 1-indexed
       const durTot = { ...S.total, numFmt:'[h]:mm' };
       set(row, 0, 'TOTAIS', S.totalL);
-      ws[XLSX.utils.encode_cell({r:row,c:1})]  = { f:`COUNTIF(G${F1}:G${FL},">"&0)&" dias"`, t:'s', s:S.totalL };
+      ws[XLSX.utils.encode_cell({r:row,c:1})]  = { f:`COUNTIF(G${F1}:G${FL},">0")`, t:'n', s:{ ...S.totalL, numFmt:'0" dias"' } };
       for (let c=2; c<=5; c++) set(row, c, '', S.total);
       ws[XLSX.utils.encode_cell({r:row,c:6})]  = { f:`SUM(G${F1}:G${FL})`,               t:'n', s:durTot };
       ws[XLSX.utils.encode_cell({r:row,c:7})]  = { f:`SUM(H${F1}:H${FL})`,               t:'n', s:durTot };
