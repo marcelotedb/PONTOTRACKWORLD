@@ -976,13 +976,13 @@ class ReportsManager {
         ws[XLSX.utils.encode_cell({r:row,c:4})] = e2v!==null ? { v:e2v, t:'n', s:timeSt(cs) } : { v:'', t:'s', s:cs };
         ws[XLSX.utils.encode_cell({r:row,c:5})] = s2v!==null ? { v:s2v, t:'n', s:timeSt(day.usedRefExit?csI:cs) } : { v:'', t:'s', s:cs };
 
-        // ── G: H. Trabalhadas — FÓRMULA ──
-        // (Saída−Entrada) − (RetAlmoço−SaídaAlmoço) + serviço extra como constante
+        // ── G: H. Trabalhadas — FÓRMULA + valor em cache ──
+        // xlsx-js-style requer v (cache) + f (fórmula) para gravar célula como fórmula real
         let gF = `IF(AND(ISNUMBER(C${R}),ISNUMBER(F${R})),IF(AND(ISNUMBER(D${R}),ISNUMBER(E${R})),(F${R}-C${R})-(E${R}-D${R}),F${R}-C${R}),0)`;
         if (day.extraWorkedMin > 0 && !day.onlyExtraService) {
           gF += `+${(day.extraWorkedMin / (24 * 60)).toFixed(10)}`;
         }
-        ws[XLSX.utils.encode_cell({r:row,c:6})] = { f:gF, t:'n', s:durSt(cs) };
+        ws[XLSX.utils.encode_cell({r:row,c:6})] = { v:day.workedMin/(24*60), f:gF, t:'n', s:durSt(cs) };
 
         // ── H: H. Esperadas — valor estático editável ──
         ws[XLSX.utils.encode_cell({r:row,c:7})] = {
@@ -997,27 +997,27 @@ class ReportsManager {
           s:{ font:{color:{rgb:'FFFFFF'},sz:1,name:'Arial'}, fill:{fgColor:{rgb:'FFFFFF'}}, border:brd }
         };
 
-        // ── I: HE 50% — FÓRMULA (quando O=0: dia normal ou funcionário especial) ──
+        // ── I: HE 50% — FÓRMULA + cache ──
         ws[XLSX.utils.encode_cell({r:row,c:8})] = {
-          f:`IF(AND(G${R}>H${R},O${R}=0),G${R}-H${R},0)`, t:'n',
+          v:day.heMin50/(24*60), f:`IF(AND(G${R}>H${R},O${R}=0),G${R}-H${R},0)`, t:'n',
           s:durSt(day.heMin50>0?csG:cs)
         };
 
-        // ── J: HE 100% — FÓRMULA (quando O=1: dom./feriado para funcionários regulares) ──
+        // ── J: HE 100% — FÓRMULA + cache ──
         ws[XLSX.utils.encode_cell({r:row,c:9})] = {
-          f:`IF(AND(G${R}>H${R},O${R}=1),G${R}-H${R},0)`, t:'n',
+          v:day.heMin100/(24*60), f:`IF(AND(G${R}>H${R},O${R}=1),G${R}-H${R},0)`, t:'n',
           s:durSt(day.heMin100>0?csG:cs)
         };
 
-        // ── K: Atraso — FÓRMULA (tem entrada + trabalhou < esperado) ──
+        // ── K: Atraso — FÓRMULA + cache ──
         ws[XLSX.utils.encode_cell({r:row,c:10})] = {
-          f:`IF(AND(ISNUMBER(C${R}),G${R}<H${R},H${R}>0),H${R}-G${R},0)`, t:'n',
+          v:day.atrasoMin/(24*60), f:`IF(AND(ISNUMBER(C${R}),G${R}<H${R},H${R}>0),H${R}-G${R},0)`, t:'n',
           s:durSt(day.atrasoMin>0?csR:cs)
         };
 
-        // ── L: Falta — FÓRMULA (sem entrada + jornada esperada > 0) ──
+        // ── L: Falta — FÓRMULA + cache ──
         ws[XLSX.utils.encode_cell({r:row,c:11})] = {
-          f:`IF(AND(NOT(ISNUMBER(C${R})),H${R}>0),H${R},0)`, t:'n',
+          v:day.faltaMin/(24*60), f:`IF(AND(NOT(ISNUMBER(C${R})),H${R}>0),H${R},0)`, t:'n',
           s:durSt(day.faltaMin>0?csR:cs)
         };
 
@@ -1039,15 +1039,15 @@ class ReportsManager {
       const F1 = dataFirstRow+1, FL = dataLastRow+1; // 1-indexed
       const durTot = { ...S.total, numFmt:'[h]:mm' };
       set(row, 0, 'TOTAIS', S.totalL);
-      ws[XLSX.utils.encode_cell({r:row,c:1})]  = { f:`COUNTIF(G${F1}:G${FL},">0")`, t:'n', s:{ ...S.totalL, numFmt:'0" dias"' } };
+      ws[XLSX.utils.encode_cell({r:row,c:1})]  = { v:diasTrab,          f:`COUNTIF(G${F1}:G${FL},">0")`,                    t:'n', s:{ ...S.totalL, numFmt:'0" dias"' } };
       for (let c=2; c<=5; c++) set(row, c, '', S.total);
-      ws[XLSX.utils.encode_cell({r:row,c:6})]  = { f:`SUM(G${F1}:G${FL})`,               t:'n', s:durTot };
-      ws[XLSX.utils.encode_cell({r:row,c:7})]  = { f:`SUM(H${F1}:H${FL})`,               t:'n', s:durTot };
-      ws[XLSX.utils.encode_cell({r:row,c:8})]  = { f:`SUM(I${F1}:I${FL})`,               t:'n', s:durTot };
-      ws[XLSX.utils.encode_cell({r:row,c:9})]  = { f:`SUM(J${F1}:J${FL})`,               t:'n', s:durTot };
-      ws[XLSX.utils.encode_cell({r:row,c:10})] = { f:`SUM(K${F1}:K${FL})`,               t:'n', s:durTot };
-      ws[XLSX.utils.encode_cell({r:row,c:11})] = { f:`SUM(L${F1}:L${FL})`,               t:'n', s:durTot };
-      ws[XLSX.utils.encode_cell({r:row,c:12})] = { f:`SUM(G${F1}:G${FL})-SUM(H${F1}:H${FL})`, t:'n', s:durTot };
+      ws[XLSX.utils.encode_cell({r:row,c:6})]  = { v:totW/(24*60),      f:`SUM(G${F1}:G${FL})`,                             t:'n', s:durTot };
+      ws[XLSX.utils.encode_cell({r:row,c:7})]  = { v:totE/(24*60),      f:`SUM(H${F1}:H${FL})`,                             t:'n', s:durTot };
+      ws[XLSX.utils.encode_cell({r:row,c:8})]  = { v:tot50/(24*60),     f:`SUM(I${F1}:I${FL})`,                             t:'n', s:durTot };
+      ws[XLSX.utils.encode_cell({r:row,c:9})]  = { v:tot100/(24*60),    f:`SUM(J${F1}:J${FL})`,                             t:'n', s:durTot };
+      ws[XLSX.utils.encode_cell({r:row,c:10})] = { v:totA/(24*60),      f:`SUM(K${F1}:K${FL})`,                             t:'n', s:durTot };
+      ws[XLSX.utils.encode_cell({r:row,c:11})] = { v:totF/(24*60),      f:`SUM(L${F1}:L${FL})`,                             t:'n', s:durTot };
+      ws[XLSX.utils.encode_cell({r:row,c:12})] = { v:saldo/(24*60),     f:`SUM(G${F1}:G${FL})-SUM(H${F1}:H${FL})`,         t:'n', s:durTot };
       set(row, 13, '', S.total);
       set(row, 14, '', S.total);
       mgs.push({ s:{r:row,c:0}, e:{r:row,c:1} });
