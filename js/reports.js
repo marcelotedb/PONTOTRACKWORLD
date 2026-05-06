@@ -759,6 +759,7 @@ class ReportsManager {
       let workedMin=0, expectedMin=0;
       let heMin50=0, heMin100=0, atrasoMin=0, faltaMin=0;
       let occurrence='', isDSR=false, isFalta=false;
+      let extraWorkedMin=0, onlyExtraService=false;
 
       // ── Jornada esperada e ocorrência base ──
       if (isHoliday) {
@@ -800,8 +801,10 @@ class ReportsManager {
         exit1        = stats.lunchOut!== '--:--' ? stats.lunchOut: '';
         entry2       = stats.lunchIn !== '--:--' ? stats.lunchIn : '';
         exit2        = stats.exit    !== '--:--' ? stats.exit    : '';
-        usedRefEntry = stats.usedRefEntry;
-        usedRefExit  = stats.usedRefExit;
+        usedRefEntry     = stats.usedRefEntry;
+        usedRefExit      = stats.usedRefExit;
+        extraWorkedMin   = stats.extraWorkedMin  || 0;
+        onlyExtraService = stats.onlyExtraService || false;
 
         if (workedMin > expectedMin) {
           const he = workedMin - expectedMin;
@@ -825,7 +828,8 @@ class ReportsManager {
         dayName: DAY_NAMES[dayIndex],
         entry1, exit1, entry2, exit2, usedRefEntry, usedRefExit,
         workedMin, expectedMin, heMin50, heMin100, atrasoMin, faltaMin,
-        occurrence, isHoliday, isDSR, isFalta, hasRecords, observation
+        occurrence, isHoliday, isDSR, isFalta, hasRecords, observation,
+        extraWorkedMin, onlyExtraService
       });
     }
     return days;
@@ -932,10 +936,20 @@ class ReportsManager {
       const FREEZE_ROW = row + 1;
       row++;
 
-      // ── Linhas de dados ──
+      // ── Linhas de dados — com fórmulas Excel ──
+      const empNameLow   = (emp.name || '').toLowerCase();
+      const isSpecialEmp = empNameLow.includes('raimundo') || empNameLow.includes('joao adelmo') || empNameLow.includes('joão adelmo');
+      // Estilos de tempo: clock (h:mm) para horários, duração ([h]:mm) para totais
+      const timeSt = (s) => ({ ...s, numFmt: 'h:mm' });
+      const durSt  = (s) => ({ ...s, numFmt: '[h]:mm' });
+
       let totW=0, totE=0, tot50=0, tot100=0, totA=0, totF=0, diasTrab=0;
+      let dataFirstRow=-1, dataLastRow=-1;
 
       calendar.forEach(day => {
+        if (dataFirstRow < 0) dataFirstRow = row;
+        dataLastRow = row;
+
         let bg;
         if      (day.isFalta)                                           bg = 'FFEBEE';
         else if (day.isDSR||day.dayIndex===0)                          bg = 'EEEEEE';
@@ -945,43 +959,96 @@ class ReportsManager {
         const cs  = S.row(bg);
         const csR = S.row(bg, true, 'C62828');
         const csG = S.row(bg, true, '2E7D32');
-        const csI = S.row(bg, false,'6366F1', true);  // italic/blue = referência
-        const fm  = v => v>0 ? this._formatMinutes(v) : '—';
+        const csI = S.row(bg, false,'6366F1', true);
+        const R   = row + 1; // linha Excel 1-indexed
 
-        set(row,  0, day.dateDisplay,                              cs);
-        set(row,  1, day.dayName,                                  cs);
-        set(row,  2, day.entry1||'—',  day.usedRefEntry ? csI : cs);
-        set(row,  3, day.exit1 ||'—',                              cs);
-        set(row,  4, day.entry2||'—',                              cs);
-        set(row,  5, day.exit2 ||'—',  day.usedRefExit  ? csI : cs);
-        set(row,  6, day.workedMin  >0 ? this._formatMinutes(day.workedMin)  : '—', cs);
-        set(row,  7, day.expectedMin>0 ? this._formatMinutes(day.expectedMin): '—', cs);
-        set(row,  8, fm(day.heMin50),   day.heMin50  >0 ? csG : cs);
-        set(row,  9, fm(day.heMin100),  day.heMin100 >0 ? csG : cs);
-        set(row, 10, fm(day.atrasoMin), day.atrasoMin>0 ? csR : cs);
-        set(row, 11, fm(day.faltaMin),  day.faltaMin >0 ? csR : cs);
+        // ── A: Data | B: Dia ──
+        set(row, 0, day.dateDisplay, cs);
+        set(row, 1, day.dayName,     cs);
+
+        // ── C–F: Horários editáveis como valores numéricos Excel ──
+        const e1v = day.entry1 ? this._timeToExcel(day.entry1) : null;
+        const s1v = day.exit1  ? this._timeToExcel(day.exit1)  : null;
+        const e2v = day.entry2 ? this._timeToExcel(day.entry2) : null;
+        const s2v = day.exit2  ? this._timeToExcel(day.exit2)  : null;
+        ws[XLSX.utils.encode_cell({r:row,c:2})] = e1v!==null ? { v:e1v, t:'n', s:timeSt(day.usedRefEntry?csI:cs) } : { v:'', t:'s', s:cs };
+        ws[XLSX.utils.encode_cell({r:row,c:3})] = s1v!==null ? { v:s1v, t:'n', s:timeSt(cs) } : { v:'', t:'s', s:cs };
+        ws[XLSX.utils.encode_cell({r:row,c:4})] = e2v!==null ? { v:e2v, t:'n', s:timeSt(cs) } : { v:'', t:'s', s:cs };
+        ws[XLSX.utils.encode_cell({r:row,c:5})] = s2v!==null ? { v:s2v, t:'n', s:timeSt(day.usedRefExit?csI:cs) } : { v:'', t:'s', s:cs };
+
+        // ── G: H. Trabalhadas — FÓRMULA ──
+        // (Saída−Entrada) − (RetAlmoço−SaídaAlmoço) + serviço extra como constante
+        let gF = `IF(AND(ISNUMBER(C${R}),ISNUMBER(F${R})),IF(AND(ISNUMBER(D${R}),ISNUMBER(E${R})),(F${R}-C${R})-(E${R}-D${R}),F${R}-C${R}),0)`;
+        if (day.extraWorkedMin > 0 && !day.onlyExtraService) {
+          gF += `+${(day.extraWorkedMin / (24 * 60)).toFixed(10)}`;
+        }
+        ws[XLSX.utils.encode_cell({r:row,c:6})] = { f:gF, t:'n', s:durSt(cs) };
+
+        // ── H: H. Esperadas — valor estático editável ──
+        ws[XLSX.utils.encode_cell({r:row,c:7})] = {
+          v: day.expectedMin / (24 * 60), t:'n', s:durSt(cs)
+        };
+
+        // ── O (col 14): Auxiliar oculta — tipo HE (0=50%, 1=100%) ──
+        const heType = (!isSpecialEmp && (day.dayIndex===0 ||
+          (day.isHoliday && day.occurrence!=='Facultativo'))) ? 1 : 0;
+        ws[XLSX.utils.encode_cell({r:row,c:14})] = {
+          v: heType, t:'n',
+          s:{ font:{color:{rgb:'FFFFFF'},sz:1,name:'Arial'}, fill:{fgColor:{rgb:'FFFFFF'}}, border:brd }
+        };
+
+        // ── I: HE 50% — FÓRMULA (quando O=0: dia normal ou funcionário especial) ──
+        ws[XLSX.utils.encode_cell({r:row,c:8})] = {
+          f:`IF(AND(G${R}>H${R},O${R}=0),G${R}-H${R},0)`, t:'n',
+          s:durSt(day.heMin50>0?csG:cs)
+        };
+
+        // ── J: HE 100% — FÓRMULA (quando O=1: dom./feriado para funcionários regulares) ──
+        ws[XLSX.utils.encode_cell({r:row,c:9})] = {
+          f:`IF(AND(G${R}>H${R},O${R}=1),G${R}-H${R},0)`, t:'n',
+          s:durSt(day.heMin100>0?csG:cs)
+        };
+
+        // ── K: Atraso — FÓRMULA (tem entrada + trabalhou < esperado) ──
+        ws[XLSX.utils.encode_cell({r:row,c:10})] = {
+          f:`IF(AND(ISNUMBER(C${R}),G${R}<H${R},H${R}>0),H${R}-G${R},0)`, t:'n',
+          s:durSt(day.atrasoMin>0?csR:cs)
+        };
+
+        // ── L: Falta — FÓRMULA (sem entrada + jornada esperada > 0) ──
+        ws[XLSX.utils.encode_cell({r:row,c:11})] = {
+          f:`IF(AND(NOT(ISNUMBER(C${R})),H${R}>0),H${R},0)`, t:'n',
+          s:durSt(day.faltaMin>0?csR:cs)
+        };
+
+        // ── M: Ocorrência | N: Observações ──
         set(row, 12, day.occurrence||'',
-          (day.isHoliday && day.occurrence !== 'Facultativo') ? S.row(bg,true,'92400E') : cs);
+          (day.isHoliday && day.occurrence!=='Facultativo') ? S.row(bg,true,'92400E') : cs);
         set(row, 13, day.observation||'', S.rowL(bg));
 
-        totW+=day.workedMin; totE+=day.expectedMin;
-        tot50+=day.heMin50; tot100+=day.heMin100;
-        totA+=day.atrasoMin; totF+=day.faltaMin;
+        // Acumular para a aba Resumo Mensal
+        totW+=day.workedMin;  totE+=day.expectedMin;
+        tot50+=day.heMin50;   tot100+=day.heMin100;
+        totA+=day.atrasoMin;  totF+=day.faltaMin;
         if (day.hasRecords) diasTrab++;
         row++;
       });
 
-      // ── Linha de TOTAIS ──
-      const saldo    = totW - totE;
-      const saldoStr = `${saldo>=0?'+':'-'}${this._formatMinutes(Math.abs(saldo))}`;
-      ['TOTAIS', `${diasTrab} dias`, '', '', '', '',
-       this._formatMinutes(totW), this._formatMinutes(totE),
-       tot50 >0?this._formatMinutes(tot50) :'—',
-       tot100>0?this._formatMinutes(tot100):'—',
-       totA  >0?this._formatMinutes(totA)  :'—',
-       totF  >0?this._formatMinutes(totF)  :'—',
-       `Saldo: ${saldoStr}`, '',
-      ].forEach((v, c) => set(row, c, v, c<2 ? S.totalL : S.total));
+      // ── Linha de TOTAIS — fórmulas SUM ──
+      const F1 = dataFirstRow+1, FL = dataLastRow+1; // 1-indexed
+      const durTot = { ...S.total, numFmt:'[h]:mm' };
+      set(row, 0, 'TOTAIS', S.totalL);
+      ws[XLSX.utils.encode_cell({r:row,c:1})]  = { f:`COUNTIF(G${F1}:G${FL},">"&0)&" dias"`, t:'s', s:S.totalL };
+      for (let c=2; c<=5; c++) set(row, c, '', S.total);
+      ws[XLSX.utils.encode_cell({r:row,c:6})]  = { f:`SUM(G${F1}:G${FL})`,               t:'n', s:durTot };
+      ws[XLSX.utils.encode_cell({r:row,c:7})]  = { f:`SUM(H${F1}:H${FL})`,               t:'n', s:durTot };
+      ws[XLSX.utils.encode_cell({r:row,c:8})]  = { f:`SUM(I${F1}:I${FL})`,               t:'n', s:durTot };
+      ws[XLSX.utils.encode_cell({r:row,c:9})]  = { f:`SUM(J${F1}:J${FL})`,               t:'n', s:durTot };
+      ws[XLSX.utils.encode_cell({r:row,c:10})] = { f:`SUM(K${F1}:K${FL})`,               t:'n', s:durTot };
+      ws[XLSX.utils.encode_cell({r:row,c:11})] = { f:`SUM(L${F1}:L${FL})`,               t:'n', s:durTot };
+      ws[XLSX.utils.encode_cell({r:row,c:12})] = { f:`SUM(G${F1}:G${FL})-SUM(H${F1}:H${FL})`, t:'n', s:durTot };
+      set(row, 13, '', S.total);
+      set(row, 14, '', S.total);
       mgs.push({ s:{r:row,c:0}, e:{r:row,c:1} });
       row++;
 
@@ -993,8 +1060,8 @@ class ReportsManager {
 
       // ── Configurações da aba ──
       ws['!merges'] = mgs;
-      ws['!cols']   = [10,6,10,10,10,10,11,11,10,10,10,10,20,28].map(w=>({wch:w}));
-      ws['!ref']    = XLSX.utils.encode_range({ s:{r:0,c:0}, e:{r:row-1,c:13} });
+      ws['!cols']   = [10,6,10,10,10,10,11,11,10,10,10,10,20,28,0].map((w,i)=>({ wch:w, hidden:i===14 }));
+      ws['!ref']    = XLSX.utils.encode_range({ s:{r:0,c:0}, e:{r:row-1,c:14} });
       ws['!freeze'] = { xSplit:2, ySplit:FREEZE_ROW, topLeftCell:`C${FREEZE_ROW+1}` };
 
       const shName = (emp.name||'Func').substring(0,28).replace(/[/\\?*[\]:]/g,'').trim() || `F${emp.id}`;
