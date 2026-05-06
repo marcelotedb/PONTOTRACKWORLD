@@ -725,6 +725,536 @@ class ReportsManager {
 
     doc.save(`pontotrack_relatorio_${Date.now()}.pdf`);
   }
+
+  // ==================== RELATÓRIO MENSAL COMPLETO ====================
+
+  _buildMonthCalendar(year, month, records, empInfo) {
+    const empName    = (empInfo?.name || '').toLowerCase();
+    const isSpecialEmp = empName.includes('raimundo') || empName.includes('joao adelmo') || empName.includes('joão adelmo');
+    const DAY_NAMES  = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+    const byDate = {};
+    records.forEach(r => {
+      if (!byDate[r.date]) byDate[r.date] = [];
+      byDate[r.date].push(r);
+    });
+
+    const days = [];
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dayIndex   = new Date(year, month, d).getDay();
+      const dd         = String(d).padStart(2, '0');
+      const mm         = String(month + 1).padStart(2, '0');
+      const dateStr    = `${dd}/${mm}/${year}`;
+      const dayRecs    = byDate[dateStr] || [];
+      const isHoliday  = this._isNationalHoliday(dateStr);
+      const hasRecords = dayRecs.length > 0;
+
+      let entry1='', exit1='', entry2='', exit2='';
+      let usedRefEntry=false, usedRefExit=false;
+      let workedMin=0, expectedMin=0;
+      let heMin50=0, heMin100=0, atrasoMin=0, faltaMin=0;
+      let occurrence='', isDSR=false, isFalta=false;
+
+      // ── Jornada esperada e ocorrência base ──
+      if (isHoliday) {
+        occurrence = this._getHolidayName(dateStr);
+        // expectedMin = 0
+      } else if (dayIndex === 0) {          // Domingo
+        isDSR      = !hasRecords;
+        occurrence = hasRecords ? '' : 'DSR';
+        // expectedMin = 0
+      } else if (dayIndex === 6) {          // Sábado
+        if (isSpecialEmp) {
+          isDSR      = !hasRecords;
+          occurrence = hasRecords ? '' : 'DSR';
+          // expectedMin = 0
+        } else {
+          expectedMin = 4 * 60;
+          if (!hasRecords) { isFalta = true; occurrence = 'FALTA'; }
+        }
+      } else {                              // Segunda a Sexta
+        expectedMin = 8 * 60;
+        if (!hasRecords) { isFalta = true; occurrence = 'FALTA'; }
+      }
+
+      if (!hasRecords) {
+        if (isFalta) faltaMin = expectedMin;
+      } else {
+        const stats  = this._calculateDayStats(dayRecs, empInfo);
+        workedMin    = stats.worked;
+        expectedMin  = stats.expectedMin;   // valor preciso do calculador (já considera feriados)
+
+        entry1       = stats.entry   !== '--:--' ? stats.entry   : '';
+        exit1        = stats.lunchOut!== '--:--' ? stats.lunchOut: '';
+        entry2       = stats.lunchIn !== '--:--' ? stats.lunchIn : '';
+        exit2        = stats.exit    !== '--:--' ? stats.exit    : '';
+        usedRefEntry = stats.usedRefEntry;
+        usedRefExit  = stats.usedRefExit;
+
+        if (workedMin > expectedMin) {
+          const he = workedMin - expectedMin;
+          if (dayIndex === 0 || isHoliday) heMin100 = he;
+          else                             heMin50  = he;
+        } else if (workedMin < expectedMin && expectedMin > 0) {
+          atrasoMin = expectedMin - workedMin;
+        }
+
+        if (isHoliday) occurrence = this._getHolidayName(dateStr);
+      }
+
+      days.push({
+        dateStr, dateDisplay: `${dd}/${mm}`, dayIndex,
+        dayName: DAY_NAMES[dayIndex],
+        entry1, exit1, entry2, exit2, usedRefEntry, usedRefExit,
+        workedMin, expectedMin, heMin50, heMin100, atrasoMin, faltaMin,
+        occurrence, isHoliday, isDSR, isFalta, hasRecords
+      });
+    }
+    return days;
+  }
+
+  async generateMonthReport(format, filters) {
+    const { employeeId, year, month } = filters;
+    let allRecords   = await window.ptDB.getAll('records');
+    let allEmployees = await window.ptDB.getAll('employees');
+
+    allEmployees = allEmployees.filter(e => e.status !== 'inactive');
+    if (employeeId && employeeId !== 'all') {
+      allEmployees = allEmployees.filter(e => e.id === employeeId);
+    }
+    if (!allEmployees.length) return;
+
+    const startTs = new Date(year, month, 1).getTime();
+    const endTs   = new Date(year, month + 1, 0, 23, 59, 59, 999).getTime();
+    const filtered = allRecords.filter(r => {
+      const ts = new Date(r.timestamp).getTime();
+      return ts >= startTs && ts <= endTs;
+    });
+
+    if (format === 'excel' || format === 'both') this._exportExcelDetailed(filtered, allEmployees, year, month);
+    if (format === 'pdf'   || format === 'both') this._exportPDFDetailed(filtered, allEmployees, year, month);
+  }
+
+  _exportExcelDetailed(records, employees, year, month) {
+    if (typeof XLSX === 'undefined') { alert('Biblioteca XLSX não disponível.'); return; }
+
+    const MN = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const monthLabel = `${MN[month]}/${year}`;
+    const brd = this._getBorder();
+    const wb  = XLSX.utils.book_new();
+    const summaryRows = [];
+
+    const byEmp = {};
+    records.forEach(r => {
+      if (!byEmp[r.employeeId]) byEmp[r.employeeId] = [];
+      byEmp[r.employeeId].push(r);
+    });
+
+    employees.forEach(emp => {
+      const calendar = this._buildMonthCalendar(year, month, byEmp[emp.id] || [], emp);
+      const ws = {}, mgs = [];
+      let row = 0;
+
+      // ── helpers ──
+      const set = (r, c, v, s) => {
+        ws[XLSX.utils.encode_cell({r, c})] = { v: v ?? '', t: typeof v === 'number' ? 'n' : 's', s };
+      };
+      const mkF = (bold, sz, rgb, italic) => ({ bold:!!bold, sz:sz||10, name:'Arial', color:{rgb:rgb||'1E293B'}, italic:!!italic });
+      const mkB = rgb => ({ fgColor:{rgb} });
+      const mkA = (h, wrap) => ({ horizontal:h||'center', vertical:'center', wrapText:!!wrap });
+
+      // ── shared styles ──
+      const S = {
+        title:  { font:mkF(1,13,'FFFFFF'),  fill:mkB('0F172A'), alignment:mkA('center'),     border:brd },
+        lbl:    { font:mkF(1,10,'1E293B'),  fill:mkB('E2E8F0'), alignment:mkA('right'),      border:brd },
+        val:    { font:mkF(0,10,'1E293B'),  fill:mkB('FFFFFF'), alignment:mkA('left'),       border:brd },
+        hdr:    { font:mkF(1,10,'FFFFFF'),  fill:mkB('1565C0'), alignment:mkA('center',1),  border:brd },
+        total:  { font:mkF(1,10,'0D47A1'),  fill:mkB('BBDEFB'), alignment:mkA('center'),     border:brd },
+        totalL: { font:mkF(1,10,'0D47A1'),  fill:mkB('BBDEFB'), alignment:mkA('left'),       border:brd },
+        legend: { font:mkF(0,8,'64748B',1), fill:mkB('F8FAFC'), alignment:mkA('left'),       border:brd },
+        row: (bg, bold, rgb, italic) => ({
+          font: mkF(bold,10,rgb||'1E293B',italic), fill:mkB(bg), alignment:mkA('center'), border:brd
+        }),
+      };
+
+      // ── Row 0: Título ──
+      for (let c=0; c<13; c++) set(row, c, c===0?'PontoTrack — Cartão de Ponto Mensal':'', S.title);
+      mgs.push({ s:{r:0,c:0}, e:{r:0,c:12} });
+      row++;
+
+      // ── Rows 1–6: Info do funcionário ──
+      [
+        ['Empresa:',           'PontoTrack'],
+        ['Funcionário:',       emp.name  || ''],
+        ['PIS/PASEP:',         '—'],
+        ['Matrícula:',         emp.id    || ''],
+        ['Período:',           monthLabel],
+        ['Jornada Contratual:','Seg–Sex: 07:30–17:30 (1h almoço) | Sáb: 07:30–11:30'],
+      ].forEach(([lbl, val]) => {
+        set(row, 0, lbl, S.lbl);
+        set(row, 1, val, S.val);
+        for (let c=2; c<13; c++) set(row, c, '', S.val);
+        mgs.push({ s:{r:row,c:1}, e:{r:row,c:12} });
+        row++;
+      });
+
+      // ── Row 7: Espaçador ──
+      for (let c=0; c<13; c++) set(row, c, '', { font:mkF(0,3), fill:mkB('F0F4F8'), border:brd });
+      row++;
+
+      // ── Row 8: Cabeçalho das colunas ──
+      ['Data','Dia','Entrada 1','Saída 1','Entrada 2','Saída 2',
+       'H. Trab.','H. Esp.','HE 50%','HE 100%','Atraso','Falta','Ocorrência']
+        .forEach((h, c) => set(row, c, h, S.hdr));
+      const FREEZE_ROW = row + 1;
+      row++;
+
+      // ── Linhas de dados ──
+      let totW=0, totE=0, tot50=0, tot100=0, totA=0, totF=0, diasTrab=0;
+
+      calendar.forEach(day => {
+        let bg;
+        if      (day.isFalta)             bg = 'FFEBEE';
+        else if (day.isDSR||day.dayIndex===0) bg = 'EEEEEE';
+        else if (day.isHoliday)           bg = 'FEF3C7';
+        else                              bg = day.dayIndex%2===0 ? 'FFFFFF' : 'F5F8FF';
+
+        const cs  = S.row(bg);
+        const csR = S.row(bg, true, 'C62828');
+        const csG = S.row(bg, true, '2E7D32');
+        const csI = S.row(bg, false,'6366F1', true);  // italic/blue = referência
+        const fm  = v => v>0 ? this._formatMinutes(v) : '—';
+
+        set(row,  0, day.dateDisplay,                              cs);
+        set(row,  1, day.dayName,                                  cs);
+        set(row,  2, day.entry1||'—',  day.usedRefEntry ? csI : cs);
+        set(row,  3, day.exit1 ||'—',                              cs);
+        set(row,  4, day.entry2||'—',                              cs);
+        set(row,  5, day.exit2 ||'—',  day.usedRefExit  ? csI : cs);
+        set(row,  6, day.workedMin  >0 ? this._formatMinutes(day.workedMin)  : '—', cs);
+        set(row,  7, day.expectedMin>0 ? this._formatMinutes(day.expectedMin): '—', cs);
+        set(row,  8, fm(day.heMin50),   day.heMin50  >0 ? csG : cs);
+        set(row,  9, fm(day.heMin100),  day.heMin100 >0 ? csG : cs);
+        set(row, 10, fm(day.atrasoMin), day.atrasoMin>0 ? csR : cs);
+        set(row, 11, fm(day.faltaMin),  day.faltaMin >0 ? csR : cs);
+        set(row, 12, day.occurrence||'',
+          day.isHoliday ? S.row(bg,true,'92400E') : cs);
+
+        totW+=day.workedMin; totE+=day.expectedMin;
+        tot50+=day.heMin50; tot100+=day.heMin100;
+        totA+=day.atrasoMin; totF+=day.faltaMin;
+        if (day.hasRecords) diasTrab++;
+        row++;
+      });
+
+      // ── Linha de TOTAIS ──
+      const saldo    = totW - totE;
+      const saldoStr = `${saldo>=0?'+':'-'}${this._formatMinutes(Math.abs(saldo))}`;
+      ['TOTAIS', `${diasTrab} dias`, '', '', '', '',
+       this._formatMinutes(totW), this._formatMinutes(totE),
+       tot50 >0?this._formatMinutes(tot50) :'—',
+       tot100>0?this._formatMinutes(tot100):'—',
+       totA  >0?this._formatMinutes(totA)  :'—',
+       totF  >0?this._formatMinutes(totF)  :'—',
+       `Saldo: ${saldoStr}`,
+      ].forEach((v, c) => set(row, c, v, c<2 ? S.totalL : S.total));
+      mgs.push({ s:{r:row,c:0}, e:{r:row,c:1} });
+      row++;
+
+      // ── Legenda ──
+      row++;
+      set(row, 0, '* Itálico azul = horário de referência (07:30 / 17:30) aplicado por ausência de registro', S.legend);
+      mgs.push({ s:{r:row,c:0}, e:{r:row,c:12} });
+      row++;
+
+      // ── Configurações da aba ──
+      ws['!merges'] = mgs;
+      ws['!cols']   = [10,6,10,10,10,10,11,11,10,10,10,10,22].map(w=>({wch:w}));
+      ws['!ref']    = XLSX.utils.encode_range({ s:{r:0,c:0}, e:{r:row-1,c:12} });
+      ws['!freeze'] = { xSplit:2, ySplit:FREEZE_ROW, topLeftCell:`C${FREEZE_ROW+1}` };
+
+      const shName = (emp.name||'Func').substring(0,28).replace(/[/\\?*[\]:]/g,'').trim() || `F${emp.id}`;
+      XLSX.utils.book_append_sheet(wb, ws, shName);
+      summaryRows.push({ emp, diasTrab, totW, totE, tot50, tot100, totA, totF, saldo });
+    });
+
+    // ════════════════════════════════════════════
+    // ABA: Resumo Mensal
+    // ════════════════════════════════════════════
+    const wsR = {}, mgsR = [];
+    let rRow = 0;
+    const brdR = this._getBorder();
+    const mkFR = (bold,sz,rgb) => ({ bold:!!bold, sz:sz||10, name:'Arial', color:{rgb:rgb||'1E293B'} });
+    const mkBR = rgb => ({ fgColor:{rgb} });
+
+    const SR = {
+      title: { font:mkFR(1,13,'FFFFFF'), fill:mkBR('0F172A'), alignment:{horizontal:'center',vertical:'center'}, border:brdR },
+      hdr:   { font:mkFR(1,10,'FFFFFF'), fill:mkBR('1565C0'), alignment:{horizontal:'center',vertical:'center',wrapText:true}, border:brdR },
+      row:  (bg,bold,rgb) => ({ font:mkFR(bold,10,rgb||'1E293B'), fill:mkBR(bg), alignment:{horizontal:'center'}, border:brdR }),
+      rowL: (bg,bold,rgb) => ({ font:mkFR(bold,10,rgb||'1E293B'), fill:mkBR(bg), alignment:{horizontal:'left'},   border:brdR }),
+      total: { font:mkFR(1,10,'0D47A1'), fill:mkBR('BBDEFB'), alignment:{horizontal:'center'}, border:brdR },
+    };
+    const setR = (r,c,v,s) => {
+      wsR[XLSX.utils.encode_cell({r,c})] = { v:v??'', t:typeof v==='number'?'n':'s', s };
+    };
+
+    // Título
+    for (let c=0; c<11; c++) setR(rRow, c, c===0?`Resumo Mensal — ${monthLabel}`:'', SR.title);
+    mgsR.push({ s:{r:0,c:0}, e:{r:0,c:10} });
+    rRow++;
+
+    // Cabeçalhos
+    ['Matrícula','Funcionário','Cargo','Dias Trab.','Faltas',
+     'H. Trab.','H. Esp.','HE 50%','HE 100%','Atrasos','Saldo']
+      .forEach((h,c) => setR(rRow, c, h, SR.hdr));
+    rRow++;
+
+    let rTotDias=0,rTotW=0,rTotE=0,rTot50=0,rTot100=0,rTotA=0,rTotF=0;
+
+    summaryRows.forEach(({emp,diasTrab,totW,totE,tot50,tot100,totA,totF,saldo},idx) => {
+      const bg      = idx%2===0 ? 'FFFFFF' : 'F5F8FF';
+      const cs      = SR.row(bg);
+      const csR     = SR.row(bg, true, 'C62828');
+      const csG     = SR.row(bg, true, '2E7D32');
+      const faltaD  = totF>0 ? +(totF/(8*60)).toFixed(1) : 0;
+      const saldoS  = `${saldo>=0?'+':'-'}${this._formatMinutes(Math.abs(saldo))}`;
+
+      setR(rRow, 0,  emp.id||'',   cs);
+      setR(rRow, 1,  emp.name||'', SR.rowL(bg));
+      setR(rRow, 2,  emp.role||'', cs);
+      setR(rRow, 3,  diasTrab,     cs);
+      setR(rRow, 4,  faltaD>0 ? `${faltaD}d` : '—', faltaD>0 ? csR : cs);
+      setR(rRow, 5,  this._formatMinutes(totW),  cs);
+      setR(rRow, 6,  this._formatMinutes(totE),  cs);
+      setR(rRow, 7,  tot50 >0?this._formatMinutes(tot50) :'—', tot50 >0?csG:cs);
+      setR(rRow, 8,  tot100>0?this._formatMinutes(tot100):'—', tot100>0?csG:cs);
+      setR(rRow, 9,  totA  >0?this._formatMinutes(totA)  :'—', totA  >0?csR:cs);
+      setR(rRow, 10, saldoS, saldo>=0 ? csG : csR);
+
+      rTotDias+=diasTrab; rTotW+=totW; rTotE+=totE;
+      rTot50+=tot50; rTot100+=tot100; rTotA+=totA; rTotF+=totF;
+      rRow++;
+    });
+
+    const rSaldo   = rTotW-rTotE;
+    const rSaldoS  = `${rSaldo>=0?'+':'-'}${this._formatMinutes(Math.abs(rSaldo))}`;
+    ['TOTAIS','','', rTotDias, '',
+     this._formatMinutes(rTotW), this._formatMinutes(rTotE),
+     rTot50 >0?this._formatMinutes(rTot50) :'—',
+     rTot100>0?this._formatMinutes(rTot100):'—',
+     rTotA  >0?this._formatMinutes(rTotA)  :'—',
+     rSaldoS,
+    ].forEach((v,c) => setR(rRow, c, v, SR.total));
+    mgsR.push({ s:{r:rRow,c:0}, e:{r:rRow,c:1} });
+    rRow++;
+
+    wsR['!merges'] = mgsR;
+    wsR['!cols']   = [12,22,16,10,9,11,11,10,10,10,13].map(w=>({wch:w}));
+    wsR['!ref']    = XLSX.utils.encode_range({ s:{r:0,c:0}, e:{r:rRow-1,c:10} });
+    wsR['!freeze'] = { xSplit:2, ySplit:2, topLeftCell:'C3' };
+
+    XLSX.utils.book_append_sheet(wb, wsR, 'Resumo Mensal');
+    XLSX.writeFile(wb, `PontoTrack_${MN[month]}_${year}.xlsx`);
+  }
+
+  _exportPDFDetailed(records, employees, year, month) {
+    if (typeof window.jspdf === 'undefined') { alert('Biblioteca jsPDF não disponível.'); return; }
+    const { jsPDF } = window.jspdf;
+
+    const MN = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const monthLabel = `${MN[month]}/${year}`;
+    const byEmp      = {};
+    records.forEach(r => {
+      if (!byEmp[r.employeeId]) byEmp[r.employeeId] = [];
+      byEmp[r.employeeId].push(r);
+    });
+
+    const doc    = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
+    const PW     = doc.internal.pageSize.getWidth();
+    const PH     = doc.internal.pageSize.getHeight();
+    const ML=8, MR=8, MT=8, MB=13;
+    const emitDate = new Date().toLocaleDateString('pt-BR',
+      { day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit' });
+
+    let firstEmp = true;
+
+    employees.forEach(emp => {
+      const calendar = this._buildMonthCalendar(year, month, byEmp[emp.id]||[], emp);
+      if (!firstEmp) doc.addPage();
+      firstEmp = false;
+      let y = MT;
+
+      // ── Barra de título ──
+      doc.setFillColor(15,23,42);
+      doc.rect(ML, y, PW-ML-MR, 9, 'F');
+      doc.setTextColor(255,255,255);
+      doc.setFontSize(12);
+      doc.setFont('helvetica','bold');
+      doc.text('PontoTrack — Cartão de Ponto Mensal', PW/2, y+6.3, { align:'center' });
+      y += 11;
+
+      // ── Barra de info do funcionário ──
+      doc.setFillColor(226,232,240);
+      doc.rect(ML, y, PW-ML-MR, 14, 'F');
+      doc.setFontSize(8);
+      const infoW = (PW-ML-MR) / 4;
+      [
+        [`Funcionário:`, emp.name||''],
+        [`Matrícula:`,   emp.id||''],
+        [`Cargo:`,       emp.role||''],
+        [`Período:`,     monthLabel],
+      ].forEach(([lbl,val], i) => {
+        const ix = ML + i*infoW + 2;
+        doc.setTextColor(30,41,59);
+        doc.setFont('helvetica','bold');
+        doc.text(lbl, ix, y+5);
+        doc.setFont('helvetica','normal');
+        doc.text(val, ix + doc.getTextWidth(lbl) + 1.5, y+5);
+      });
+      doc.setFont('helvetica','bold');
+      doc.text('Jornada:', ML+2, y+11);
+      doc.setFont('helvetica','normal');
+      doc.text('Seg–Sex: 07:30–17:30 (1h almoço) | Sáb: 07:30–11:30', ML+2+doc.getTextWidth('Jornada:')+1.5, y+11);
+      y += 17;
+
+      // ── Tabela principal ──
+      const heads = [['Data','Dia','Entrada 1','Saída 1','Entrada 2','Saída 2',
+                       'H.Trab.','H.Esp.','HE 50%','HE 100%','Atraso','Falta','Ocorrência']];
+      const body  = calendar.map(day => [
+        day.dateDisplay, day.dayName,
+        day.entry1||'—', day.exit1||'—',
+        day.entry2||'—', day.exit2||'—',
+        day.workedMin  >0 ? this._formatMinutes(day.workedMin)  : '—',
+        day.expectedMin>0 ? this._formatMinutes(day.expectedMin): '—',
+        day.heMin50  >0 ? this._formatMinutes(day.heMin50)  : '—',
+        day.heMin100 >0 ? this._formatMinutes(day.heMin100) : '—',
+        day.atrasoMin>0 ? this._formatMinutes(day.atrasoMin): '—',
+        day.faltaMin >0 ? this._formatMinutes(day.faltaMin) : '—',
+        day.occurrence||'',
+      ]);
+
+      doc.autoTable({
+        startY: y,
+        head:   heads,
+        body:   body,
+        margin: { left:ML, right:MR },
+        theme:  'grid',
+        headStyles: {
+          fillColor:[21,101,192], textColor:255,
+          fontStyle:'bold', fontSize:7.5, halign:'center', cellPadding:1.5
+        },
+        bodyStyles: { fontSize:7.5, cellPadding:1.5, halign:'center', textColor:[30,41,59] },
+        alternateRowStyles: { fillColor:[245,248,255] },
+        columnStyles: {
+          0:{cellWidth:11}, 1:{cellWidth:8},
+          2:{cellWidth:15}, 3:{cellWidth:15},
+          4:{cellWidth:15}, 5:{cellWidth:15},
+          6:{cellWidth:14}, 7:{cellWidth:14},
+          8:{cellWidth:13}, 9:{cellWidth:13},
+          10:{cellWidth:12}, 11:{cellWidth:12},
+          12:{halign:'left'}
+        },
+        didParseCell: data => {
+          if (data.section !== 'body') return;
+          const d = calendar[data.row.index];
+          if (!d) return;
+          if      (d.isFalta)  data.cell.styles.fillColor = [255,235,238];
+          else if (d.isDSR||d.dayIndex===0) data.cell.styles.fillColor = [238,238,238];
+          else if (d.isHoliday)data.cell.styles.fillColor = [254,243,199];
+          const c = data.column.index;
+          if (c===10 && d.atrasoMin>0){ data.cell.styles.textColor=[198,40,40];  data.cell.styles.fontStyle='bold'; }
+          if (c===11 && d.faltaMin >0){ data.cell.styles.textColor=[198,40,40];  data.cell.styles.fontStyle='bold'; }
+          if (c===8  && d.heMin50  >0){ data.cell.styles.textColor=[46,125,50];  data.cell.styles.fontStyle='bold'; }
+          if (c===9  && d.heMin100 >0){ data.cell.styles.textColor=[46,125,50];  data.cell.styles.fontStyle='bold'; }
+          if (c===2  && d.usedRefEntry){ data.cell.styles.textColor=[99,102,241]; data.cell.styles.fontStyle='italic'; }
+          if (c===5  && d.usedRefExit) { data.cell.styles.textColor=[99,102,241]; data.cell.styles.fontStyle='italic'; }
+        },
+      });
+
+      // ── Barra de totais ──
+      let totW=0,totE=0,tot50=0,tot100=0,totA=0,totF=0,diasTrab=0;
+      calendar.forEach(d => {
+        totW+=d.workedMin; totE+=d.expectedMin;
+        tot50+=d.heMin50;  tot100+=d.heMin100;
+        totA+=d.atrasoMin; totF+=d.faltaMin;
+        if (d.hasRecords) diasTrab++;
+      });
+      const saldo    = totW-totE;
+      const saldoStr = `${saldo>=0?'+':'-'}${this._formatMinutes(Math.abs(saldo))}`;
+
+      doc.autoTable({
+        startY: doc.lastAutoTable.finalY + 2,
+        body: [[
+          `Dias Trab.: ${diasTrab}`,
+          `H. Trabalhadas: ${this._formatMinutes(totW)}`,
+          `H. Esperadas: ${this._formatMinutes(totE)}`,
+          `HE 50%: ${tot50>0?this._formatMinutes(tot50):'—'}`,
+          `HE 100%: ${tot100>0?this._formatMinutes(tot100):'—'}`,
+          `Atrasos: ${totA>0?this._formatMinutes(totA):'—'}`,
+          `Saldo: ${saldoStr}`,
+        ]],
+        margin:     { left:ML, right:MR },
+        theme:      'grid',
+        bodyStyles: { fillColor:[187,222,251], textColor:[13,71,161], fontStyle:'bold', fontSize:8, halign:'center', cellPadding:2 },
+      });
+
+      // ── Bloco de assinaturas ──
+      const afterTable = doc.lastAutoTable.finalY + 8;
+      const sigH       = 36;
+      const sy = (afterTable + sigH > PH - MB) ? (doc.addPage(), MT) : afterTable;
+
+      doc.setFontSize(7.5);
+      doc.setFont('helvetica','italic');
+      doc.setTextColor(100,116,139);
+      doc.text('* Horários em itálico azul = horário de referência aplicado por ausência de registro', ML, sy);
+
+      const sigY   = sy + 6;
+      const sigW   = (PW - ML - MR - 20) / 3;
+      const sigGap = 10;
+      const sigXs  = [ML, ML+sigW+sigGap, ML+(sigW+sigGap)*2];
+      const sigLbls = ['Assinatura do Funcionário','Assinatura do Responsável / Gestor','Assinatura da Empresa / RH'];
+
+      sigXs.forEach((sx, i) => {
+        doc.setDrawColor(148,163,184);
+        doc.setLineWidth(0.3);
+        doc.line(sx, sigY+14, sx+sigW, sigY+14);
+        doc.setFont('helvetica','normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(30,41,59);
+        doc.text(sigLbls[i], sx+sigW/2, sigY+18, { align:'center' });
+        if (i===0 && emp.name) {
+          doc.setFontSize(7);
+          doc.setTextColor(100,116,139);
+          doc.text(emp.name, sx+sigW/2, sigY+23, { align:'center' });
+        }
+      });
+
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(100,116,139);
+      doc.text(`Data de emissão: ${emitDate}`, ML, sigY+30);
+      doc.text(`Período: ${monthLabel}`, PW/2, sigY+30, { align:'center' });
+      doc.text(`Matrícula: ${emp.id||''}`, PW-MR, sigY+30, { align:'right' });
+    });
+
+    // ── Rodapé em todas as páginas ──
+    const totalPgs = doc.internal.getNumberOfPages();
+    for (let p=1; p<=totalPgs; p++) {
+      doc.setPage(p);
+      doc.setFontSize(7);
+      doc.setFont('helvetica','normal');
+      doc.setTextColor(148,163,184);
+      doc.text(`Página ${p} de ${totalPgs}`,                  PW-MR, PH-4, { align:'right' });
+      doc.text(`Emitido em: ${emitDate}`,                     ML,    PH-4);
+      doc.text('PontoTrack — Sistema de Controle de Ponto', PW/2,  PH-4, { align:'center' });
+    }
+
+    doc.save(`PontoTrack_PDF_${MN[month]}_${year}.pdf`);
+  }
 }
 
 window.reportsManager = new ReportsManager();

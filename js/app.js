@@ -1275,14 +1275,25 @@ class PontoTrackApp {
   }
 
   async _loadEmployeesToSelect() {
-    const selects = [document.getElementById('reportEmployee'), document.getElementById('serviceAdminEmployee')];
+    const selects = [
+      document.getElementById('reportEmployee'),
+      document.getElementById('serviceAdminEmployee'),
+      document.getElementById('monthReportEmployee'),
+    ];
     const employees = await window.ptDB.getAll('employees');
-    
-    selects.forEach(select => {
-      if (!select) return;
-      select.innerHTML = '<option value="all">Todos os Funcionários</option>' +
-        employees.map(e => `<option value="${e.id}">${e.name} (${e.id})</option>`).join('');
-    });
+    const opts = '<option value="all">Todos os Funcionários</option>' +
+      employees.map(e => `<option value="${e.id}">${e.name} (${e.id})</option>`).join('');
+
+    selects.forEach(sel => { if (sel) sel.innerHTML = opts; });
+
+    // Inicializa o seletor de mês com o mês atual se ainda estiver vazio
+    const monthInput = document.getElementById('monthReportPeriod');
+    if (monthInput && !monthInput.value) {
+      const now = new Date();
+      const y   = now.getFullYear();
+      const m   = String(now.getMonth() + 1).padStart(2, '0');
+      monthInput.value = `${y}-${m}`;
+    }
   }
 
   // ==================== REPORTS ====================
@@ -1297,6 +1308,23 @@ class PontoTrackApp {
     if (format === 'view') {
       document.getElementById('reportResults').innerHTML = result;
     }
+  }
+
+  async generateMonthReport(format) {
+    const empId  = document.getElementById('monthReportEmployee')?.value || 'all';
+    const period = document.getElementById('monthReportPeriod')?.value;   // YYYY-MM
+
+    if (!period) {
+      this.showToast('Selecione o mês/ano para gerar o relatório', 'warning');
+      return;
+    }
+
+    const [yearStr, monthStr] = period.split('-');
+    const year  = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10) - 1; // 0-indexed
+
+    this.showToast('Gerando relatório...', 'info');
+    await window.reportsManager.generateMonthReport(format, { employeeId: empId, year, month });
   }
 
   // ==================== SETTINGS ====================

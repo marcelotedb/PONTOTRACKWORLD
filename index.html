@@ -36,6 +36,7 @@
     
     <!-- Export Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
     
     <!-- App CSS -->
@@ -137,7 +138,7 @@
 
             <div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--border);text-align:center;font-size:12px;color:var(--text-tertiary);">
                 <p><i class="fas fa-shield-alt" style="color:var(--primary-light);"></i> Acesso seguro • Dados criptografados</p>
-                <p style="margin-top:4px;">PontoTrack v4.5 • Controle de Ponto Inteligente</p>
+                <p style="margin-top:4px;">PontoTrack v4.6 • Controle de Ponto Inteligente</p>
             </div>
         </div>
     </div>
@@ -513,6 +514,43 @@
                             <i class="fas fa-chart-bar"></i>
                             <h3>Selecione os filtros</h3>
                             <p>Escolha o período e o funcionário para gerar o relatório</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Relatório Mensal Completo -->
+                <div class="section-card" style="margin-top:16px;padding:0;overflow:hidden;">
+                    <div style="background:linear-gradient(135deg,#1565C0,#0D47A1);padding:14px 16px 12px;">
+                        <h3 style="margin:0;color:#fff;font-size:15px;font-weight:700;">
+                            <i class="fas fa-file-contract" style="margin-right:8px;"></i>Relatório Mensal Completo
+                        </h3>
+                        <p style="margin:3px 0 0;color:#BBDEFB;font-size:12px;">
+                            Cartão de ponto com HE, faltas e atrasos — Excel detalhado + PDF com assinatura
+                        </p>
+                    </div>
+                    <div style="padding:14px;">
+                        <div class="control-grid">
+                            <div class="control-group">
+                                <label>Funcionário</label>
+                                <select id="monthReportEmployee">
+                                    <option value="all">Todos os Funcionários</option>
+                                </select>
+                            </div>
+                            <div class="control-group">
+                                <label>Mês / Ano</label>
+                                <input type="month" id="monthReportPeriod">
+                            </div>
+                        </div>
+                        <div class="export-buttons" style="margin-top:12px;flex-wrap:wrap;gap:8px;">
+                            <button class="btn-export btn-excel" onclick="app.generateMonthReport('excel')">
+                                <i class="fas fa-file-excel"></i> Excel Detalhado
+                            </button>
+                            <button class="btn-export btn-pdf" onclick="app.generateMonthReport('pdf')">
+                                <i class="fas fa-file-pdf"></i> PDF c/ Assinatura
+                            </button>
+                            <button class="btn-export" style="background:linear-gradient(135deg,#7C3AED,#5B21B6);" onclick="app.generateMonthReport('both')">
+                                <i class="fas fa-download"></i> Exportar Ambos
+                            </button>
                         </div>
                     </div>
                 </div>

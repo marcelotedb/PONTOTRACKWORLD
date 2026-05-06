@@ -4,9 +4,9 @@
 //             Network First + Cache Fallback para API/dados
 // ============================================================
 
-const CACHE_NAME = 'pontotrack-v4.5';
-const STATIC_CACHE = 'pontotrack-static-v4.5';
-const DYNAMIC_CACHE = 'pontotrack-dynamic-v4.5';
+const CACHE_NAME = 'pontotrack-v4.6';
+const STATIC_CACHE = 'pontotrack-static-v4.6';
+const DYNAMIC_CACHE = 'pontotrack-dynamic-v4.6';
 
 // Assets que devem ser cacheados na instalação
 const STATIC_ASSETS = [
@@ -27,12 +27,13 @@ const STATIC_ASSETS = [
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
   'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+  'https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js',
   'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js'
 ];
 
 // Instalar Service Worker
 self.addEventListener('install', event => {
-  console.log('[SW] Instalando Service Worker v4.5...');
+  console.log('[SW] Instalando Service Worker v4.6...');
   event.waitUntil(
     caches.open(STATIC_CACHE)
       .then(cache => {
@@ -51,7 +52,7 @@ self.addEventListener('install', event => {
 
 // Ativar Service Worker
 self.addEventListener('activate', event => {
-  console.log('[SW] Ativando Service Worker v4.5...');
+  console.log('[SW] Ativando Service Worker v4.6...');
   event.waitUntil(
     caches.keys().then(cacheNames => {
       return Promise.all(
