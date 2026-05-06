@@ -546,7 +546,7 @@ class PontoTrackApp {
     const actual = this._calcCurrentMonthMinutes(records);
     document.getElementById('monthHours').textContent = this._formatHours(actual);
 
-    const expected = this._calcExpectedMonthMinutesUntilToday();
+    const expected = this._calcExpectedMonthMinutesUntilToday(this.currentUser);
     const balance = actual - expected;
     const balEl = document.getElementById('balanceHours');
     balEl.textContent = (balance >= 0 ? '+' : '') + this._formatHours(Math.abs(balance));
@@ -1788,18 +1788,29 @@ class PontoTrackApp {
     return gf.getDate() === d && (gf.getMonth() + 1) === m;
   }
 
-  _calcExpectedMonthMinutesUntilToday() {
+  _calcExpectedMonthMinutesUntilToday(empInfo) {
+    const empName      = (empInfo?.name || '').toLowerCase();
+    const isSpecialEmp = empName.includes('raimundo') || empName.includes('joao adelmo') || empName.includes('joão adelmo');
     let expected = 0;
-    const now = new Date();
+    const now   = new Date();
     const start = new Date(now.getFullYear(), now.getMonth(), 1);
     const today = new Date();
     today.setHours(23, 59, 59, 999);
 
     for (let d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
-      if (this._isNationalHoliday(d)) continue; // feriado nacional → não conta na jornada esperada
-      const day = d.getDay();
-      if (day >= 1 && day <= 5) expected += 8 * 60; // 8h Segunda a Sexta
-      else if (day === 6) expected += 4 * 60; // 4h Sábado
+      const isHoliday = this._isNationalHoliday(d);
+      const day       = d.getDay();
+
+      if (isSpecialEmp) {
+        // Raimundo/João Adelmo: Sáb/Dom = 0h | feriados = dia normal (8h facultativo)
+        if (day === 0 || day === 6) continue;
+        expected += 8 * 60;
+      } else {
+        // Funcionários regulares: feriados e Dom = 0h | Sáb = 4h | Seg–Sex = 8h
+        if (isHoliday || day === 0) continue;
+        if (day >= 1 && day <= 5) expected += 8 * 60;
+        else if (day === 6)        expected += 4 * 60;
+      }
     }
     return expected;
   }

@@ -260,14 +260,16 @@ class ReportsManager {
     const isNationalHoliday = this._isNationalHoliday(dateStr);
 
     // ── Jornada esperada ──
-    // Feriados nacionais e dias só de serviço extra → jornada esperada = 0
     let expectedMin = 8 * 60;
-    if (isNationalHoliday || onlyExtraService) {
+    if (onlyExtraService) {
       expectedMin = 0;
     } else if (isSpecialEmp) {
+      // Raimundo/João Adelmo: feriados = dia facultativo (8h normais, trabalho não gera HE)
+      // Sábado e Domingo = 0h (folga)
       if (dayIndex === 6 || dayIndex === 0) expectedMin = 0;
     } else {
-      if (dayIndex === 0) expectedMin = 0;
+      // Funcionários regulares: feriados nacionais = 0h, Domingo = 0h, Sábado = 4h
+      if (isNationalHoliday || dayIndex === 0) expectedMin = 0;
       else if (dayIndex === 6) expectedMin = 4 * 60;
     }
 
@@ -280,8 +282,9 @@ class ReportsManager {
     let notes = dayRecords.map(r => r.observation).filter(Boolean).join('; ');
     if (extraEntry) notes = `[Serviço Extra] ${notes}`;
     if (isNationalHoliday) {
-      const hName = this._getHolidayName(dateStr);
-      notes = notes ? `[Feriado: ${hName}] ${notes}` : `[Feriado: ${hName}]`;
+      const hName      = this._getHolidayName(dateStr);
+      const noteLabel  = isSpecialEmp ? 'Facultativo' : 'Feriado';
+      notes = notes ? `[${noteLabel}: ${hName}] ${notes}` : `[${noteLabel}: ${hName}]`;
     }
     const refNotes = [];
     if (usedRefEntry) refNotes.push(`Entrada ref. ${REF_ENTRY}`);
@@ -759,8 +762,15 @@ class ReportsManager {
 
       // ── Jornada esperada e ocorrência base ──
       if (isHoliday) {
-        occurrence = this._getHolidayName(dateStr);
-        // expectedMin = 0
+        if (isSpecialEmp) {
+          // Raimundo/João Adelmo: feriado = dia facultativo (8h normais)
+          expectedMin = 8 * 60;
+          occurrence  = 'Facultativo';
+          if (!hasRecords) { isFalta = true; }
+        } else {
+          occurrence = this._getHolidayName(dateStr);
+          // expectedMin = 0
+        }
       } else if (dayIndex === 0) {          // Domingo
         isDSR      = !hasRecords;
         occurrence = hasRecords ? '' : 'DSR';
@@ -795,21 +805,27 @@ class ReportsManager {
 
         if (workedMin > expectedMin) {
           const he = workedMin - expectedMin;
-          if (dayIndex === 0 || isHoliday) heMin100 = he;
-          else                             heMin50  = he;
+          // Raimundo/João Adelmo: APENAS HE 50% (nunca HE 100%)
+          if (!isSpecialEmp && (dayIndex === 0 || isHoliday)) heMin100 = he;
+          else                                                  heMin50  = he;
         } else if (workedMin < expectedMin && expectedMin > 0) {
           atrasoMin = expectedMin - workedMin;
         }
 
-        if (isHoliday) occurrence = this._getHolidayName(dateStr);
+        if (isHoliday) {
+          occurrence = isSpecialEmp ? 'Facultativo' : this._getHolidayName(dateStr);
+        }
       }
+
+      // Observações do funcionário (apenas o texto digitado, sem notas de sistema)
+      const observation = dayRecs.map(r => r.observation).filter(Boolean).join(' | ');
 
       days.push({
         dateStr, dateDisplay: `${dd}/${mm}`, dayIndex,
         dayName: DAY_NAMES[dayIndex],
         entry1, exit1, entry2, exit2, usedRefEntry, usedRefExit,
         workedMin, expectedMin, heMin50, heMin100, atrasoMin, faltaMin,
-        occurrence, isHoliday, isDSR, isFalta, hasRecords
+        occurrence, isHoliday, isDSR, isFalta, hasRecords, observation
       });
     }
     return days;
@@ -878,11 +894,15 @@ class ReportsManager {
         row: (bg, bold, rgb, italic) => ({
           font: mkF(bold,10,rgb||'1E293B',italic), fill:mkB(bg), alignment:mkA('center'), border:brd
         }),
+        rowL: (bg) => ({
+          font: mkF(0,10,'334155'), fill:mkB(bg),
+          alignment:{ horizontal:'left', vertical:'center', wrapText:true }, border:brd
+        }),
       };
 
       // ── Row 0: Título ──
-      for (let c=0; c<13; c++) set(row, c, c===0?'PontoTrack — Cartão de Ponto Mensal':'', S.title);
-      mgs.push({ s:{r:0,c:0}, e:{r:0,c:12} });
+      for (let c=0; c<14; c++) set(row, c, c===0?'PontoTrack — Cartão de Ponto Mensal':'', S.title);
+      mgs.push({ s:{r:0,c:0}, e:{r:0,c:13} });
       row++;
 
       // ── Rows 1–6: Info do funcionário ──
@@ -896,18 +916,18 @@ class ReportsManager {
       ].forEach(([lbl, val]) => {
         set(row, 0, lbl, S.lbl);
         set(row, 1, val, S.val);
-        for (let c=2; c<13; c++) set(row, c, '', S.val);
-        mgs.push({ s:{r:row,c:1}, e:{r:row,c:12} });
+        for (let c=2; c<14; c++) set(row, c, '', S.val);
+        mgs.push({ s:{r:row,c:1}, e:{r:row,c:13} });
         row++;
       });
 
       // ── Row 7: Espaçador ──
-      for (let c=0; c<13; c++) set(row, c, '', { font:mkF(0,3), fill:mkB('F0F4F8'), border:brd });
+      for (let c=0; c<14; c++) set(row, c, '', { font:mkF(0,3), fill:mkB('F0F4F8'), border:brd });
       row++;
 
       // ── Row 8: Cabeçalho das colunas ──
       ['Data','Dia','Entrada 1','Saída 1','Entrada 2','Saída 2',
-       'H. Trab.','H. Esp.','HE 50%','HE 100%','Atraso','Falta','Ocorrência']
+       'H. Trab.','H. Esp.','HE 50%','HE 100%','Atraso','Falta','Ocorrência','Observações']
         .forEach((h, c) => set(row, c, h, S.hdr));
       const FREEZE_ROW = row + 1;
       row++;
@@ -917,10 +937,10 @@ class ReportsManager {
 
       calendar.forEach(day => {
         let bg;
-        if      (day.isFalta)             bg = 'FFEBEE';
-        else if (day.isDSR||day.dayIndex===0) bg = 'EEEEEE';
-        else if (day.isHoliday)           bg = 'FEF3C7';
-        else                              bg = day.dayIndex%2===0 ? 'FFFFFF' : 'F5F8FF';
+        if      (day.isFalta)                                           bg = 'FFEBEE';
+        else if (day.isDSR||day.dayIndex===0)                          bg = 'EEEEEE';
+        else if (day.isHoliday && day.occurrence !== 'Facultativo')    bg = 'FEF3C7';
+        else                                                           bg = day.dayIndex%2===0 ? 'FFFFFF' : 'F5F8FF';
 
         const cs  = S.row(bg);
         const csR = S.row(bg, true, 'C62828');
@@ -941,7 +961,8 @@ class ReportsManager {
         set(row, 10, fm(day.atrasoMin), day.atrasoMin>0 ? csR : cs);
         set(row, 11, fm(day.faltaMin),  day.faltaMin >0 ? csR : cs);
         set(row, 12, day.occurrence||'',
-          day.isHoliday ? S.row(bg,true,'92400E') : cs);
+          (day.isHoliday && day.occurrence !== 'Facultativo') ? S.row(bg,true,'92400E') : cs);
+        set(row, 13, day.observation||'', S.rowL(bg));
 
         totW+=day.workedMin; totE+=day.expectedMin;
         tot50+=day.heMin50; tot100+=day.heMin100;
@@ -959,7 +980,7 @@ class ReportsManager {
        tot100>0?this._formatMinutes(tot100):'—',
        totA  >0?this._formatMinutes(totA)  :'—',
        totF  >0?this._formatMinutes(totF)  :'—',
-       `Saldo: ${saldoStr}`,
+       `Saldo: ${saldoStr}`, '',
       ].forEach((v, c) => set(row, c, v, c<2 ? S.totalL : S.total));
       mgs.push({ s:{r:row,c:0}, e:{r:row,c:1} });
       row++;
@@ -967,13 +988,13 @@ class ReportsManager {
       // ── Legenda ──
       row++;
       set(row, 0, '* Itálico azul = horário de referência (07:30 / 17:30) aplicado por ausência de registro', S.legend);
-      mgs.push({ s:{r:row,c:0}, e:{r:row,c:12} });
+      mgs.push({ s:{r:row,c:0}, e:{r:row,c:13} });
       row++;
 
       // ── Configurações da aba ──
       ws['!merges'] = mgs;
-      ws['!cols']   = [10,6,10,10,10,10,11,11,10,10,10,10,22].map(w=>({wch:w}));
-      ws['!ref']    = XLSX.utils.encode_range({ s:{r:0,c:0}, e:{r:row-1,c:12} });
+      ws['!cols']   = [10,6,10,10,10,10,11,11,10,10,10,10,20,28].map(w=>({wch:w}));
+      ws['!ref']    = XLSX.utils.encode_range({ s:{r:0,c:0}, e:{r:row-1,c:13} });
       ws['!freeze'] = { xSplit:2, ySplit:FREEZE_ROW, topLeftCell:`C${FREEZE_ROW+1}` };
 
       const shName = (emp.name||'Func').substring(0,28).replace(/[/\\?*[\]:]/g,'').trim() || `F${emp.id}`;
@@ -1123,7 +1144,7 @@ class ReportsManager {
 
       // ── Tabela principal ──
       const heads = [['Data','Dia','Entrada 1','Saída 1','Entrada 2','Saída 2',
-                       'H.Trab.','H.Esp.','HE 50%','HE 100%','Atraso','Falta','Ocorrência']];
+                       'H.Trab.','H.Esp.','HE 50%','HE 100%','Atraso','Falta','Ocorrência','Observações']];
       const body  = calendar.map(day => [
         day.dateDisplay, day.dayName,
         day.entry1||'—', day.exit1||'—',
@@ -1135,6 +1156,7 @@ class ReportsManager {
         day.atrasoMin>0 ? this._formatMinutes(day.atrasoMin): '—',
         day.faltaMin >0 ? this._formatMinutes(day.faltaMin) : '—',
         day.occurrence||'',
+        day.observation||'',
       ]);
 
       doc.autoTable({
@@ -1156,7 +1178,8 @@ class ReportsManager {
           6:{cellWidth:14}, 7:{cellWidth:14},
           8:{cellWidth:13}, 9:{cellWidth:13},
           10:{cellWidth:12}, 11:{cellWidth:12},
-          12:{halign:'left'}
+          12:{cellWidth:18, halign:'left'},
+          13:{cellWidth:22, halign:'left'}
         },
         didParseCell: data => {
           if (data.section !== 'body') return;
@@ -1164,7 +1187,7 @@ class ReportsManager {
           if (!d) return;
           if      (d.isFalta)  data.cell.styles.fillColor = [255,235,238];
           else if (d.isDSR||d.dayIndex===0) data.cell.styles.fillColor = [238,238,238];
-          else if (d.isHoliday)data.cell.styles.fillColor = [254,243,199];
+          else if (d.isHoliday && d.occurrence !== 'Facultativo') data.cell.styles.fillColor = [254,243,199];
           const c = data.column.index;
           if (c===10 && d.atrasoMin>0){ data.cell.styles.textColor=[198,40,40];  data.cell.styles.fontStyle='bold'; }
           if (c===11 && d.faltaMin >0){ data.cell.styles.textColor=[198,40,40];  data.cell.styles.fontStyle='bold'; }
